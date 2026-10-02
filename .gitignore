@@ -20,6 +20,15 @@ next-env.d.ts
 .DS_Store
 *.log
 
+# --- design references ---
+# The design shots under DESIGNS/ are tracked and are the source of the visual
+# direction. Installer binaries are not: DESIGNS/EpicInstaller-20.3.3.exe is
+# 252 MB, which is larger than GitHub's 100 MB per-file limit, so a `git add -A`
+# would stage it and then block EVERY future push until history was rewritten.
+# Ignore the class rather than the single file, since the next download will
+# land in the same place.
+*.exe
+
 # --- scratch ---
 # Throwaway probe scripts written while debugging against the live database.
 # Five of these (tmp-auth.cjs, tmp-col.cjs, tmp-d.cjs, tmp-e.cjs, tmp-q.cjs)

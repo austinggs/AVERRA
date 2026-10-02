@@ -364,6 +364,33 @@ constraint: the project is on an IPv4-only network, and it is the most plausible
 cause of the PGRST002 as well. It requires a Supabase-side check (project
 health, connection limits, or pool exhaustion) to confirm.
 
+Resolved 2026-10-02 (CR-0015). The IPv6-only behaviour above is now confirmed
+from the vendor rather than inferred from a local socket failure, and it is
+policy, not a misconfiguration. Supabase's "PGBouncer and IPv4 Deprecation"
+notice states that IPv4 addresses stopped being assigned from 15 January 2024,
+that "db.projectref.supabase.co will start resolving to a IPv6 address instead",
+that "Supavisor will continue to return IPv4 addresses, so you can update your
+applications to connect to Supavisor instead", and - naming this very
+environment - that the change is "required if you are using from the CLI from an
+environment without IPv6 support, like Github actions or possibly from your home
+network".
+
+Two corrections to the detail above, both observed on 2026-10-02:
+
+- the working pooler host in this project is `aws-1-eu-west-1`, not the
+  `aws-0-eu-west-1` written above. The region token moves, so read it from
+  `supabase/.temp/pooler-url` rather than copying it out of a document;
+- the failure mode is `getaddrinfo ENOTFOUND db.<ref>.supabase.co` - DNS
+  resolution fails outright here, which is the same leg failing by a different
+  route than "TCP to :5432 fails".
+
+`supabase/.temp/pooler-url` holds the pooler host with NO password, and
+`.env.local` holds the password against the DIRECT host, so neither file alone
+yields a usable URL. The pooler host plus the `.env.local` password is the
+combination that connects; this is the string that must also go into the CI
+secret, because a GitHub-hosted runner is IPv4-only for the same reason. See the
+comment on the `db-tests` job in `.github/workflows/ci.yml` and Q-30.
+
 ### Not fixed here
 
 No code was changed. The reads fail closed by design, and `getUserAccounts`
@@ -394,11 +421,11 @@ these two clauses are compatible.
 Fixed by returning a single `jsonb` object, `{id, isDuplicate}`, instead. That
 was the better shape anyway:
 
-  * `out` parameters have no clean representation over PostgREST, which is the
-    only transport this platform has for privileged calls;
-  * it is a single return value, so the whole result is one round trip;
-  * the TypeScript caller was already reading `{ id, isDuplicate }`, so the
-    signature change did not propagate into application code.
+- `out` parameters have no clean representation over PostgREST, which is the
+  only transport this platform has for privileged calls;
+- it is a single return value, so the whole result is one round trip;
+- the TypeScript caller was already reading `{ id, isDuplicate }`, so the
+  signature change did not propagate into application code.
 
 The alternative fix, a composite return type, would have required a `create type`
 and made the migration harder to read for no benefit.
@@ -432,6 +459,7 @@ directions: 0 errors across all 34 migrations, and a failure on the reinjected
 
 Generalisation: a structural check must be demonstrated to fail on the defect it
 was written for before it is trusted. Silence from a regex is not evidence.
+
 ## Q-18 - PGRST002 confirmed NOT to be a database fault; pooler region and port corrected
 
 Found: 2026-10-01, while pushing migration 034.
@@ -456,13 +484,13 @@ Supabase side of the connection, not in anything this repository controls.
 
 ### The pooler URL I gave in Q-16 was wrong
 
-Q-16 recommended ``aws-0-eu-west-1.pooler.supabase.com:6543``. Both parts were
+Q-16 recommended `aws-0-eu-west-1.pooler.supabase.com:6543`. Both parts were
 wrong for this project:
 
-  * the correct region is ``aws-1``, not ``aws-0``;
-  * port 6543 with the ``postgres.<ref>`` username returns
-    ``tenant/user ... not found``, while port 5432 returns
-    ``no tenant identifier provided``.
+- the correct region is `aws-1`, not `aws-0`;
+- port 6543 with the `postgres.<ref>` username returns
+  `tenant/user ... not found`, while port 5432 returns
+  `no tenant identifier provided`.
 
 The authoritative value was already on disk and I did not read it first. The CLI
 caches it on link:
@@ -476,26 +504,27 @@ and a guess at the region. Supabase's pooler region prefix and port are not
 derivable from the project ref, and both failure modes are unhelpful errors that
 do not name the actual problem.
 
-Also note ``supabase db push`` prompts for confirmation on a TTY and will hang
-forever in a non-interactive shell. ``--yes`` is required for automation.
+Also note `supabase db push` prompts for confirmation on a TTY and will hang
+forever in a non-interactive shell. `--yes` is required for automation.
 
 ### Verification of CR-0013 against a real database
 
 This is the first time any of the wrapper work has been checked by PostgreSQL
 rather than by a structural lint. All 34 migrations applied. Confirmed directly:
 
-  * all 31 ``public`` read wrappers exist and are ``SECURITY DEFINER``;
-  * all 4 new ``app_private`` commands exist, including
-    ``record_provider_conversion`` returning ``jsonb`` (the 42P13 fix);
-  * LEAK CHECK - no wrapper is executable by ``anon`` or ``authenticated``.
-    The query returned zero rows;
-  * the ``app`` schema is NOT in PostgREST's exposed schemas, so the CR-0013
-    decision is intact and PGRST205 remains the expected failure for any future
-    direct table read.
+- all 31 `public` read wrappers exist and are `SECURITY DEFINER`;
+- all 4 new `app_private` commands exist, including
+  `record_provider_conversion` returning `jsonb` (the 42P13 fix);
+- LEAK CHECK - no wrapper is executable by `anon` or `authenticated`.
+  The query returned zero rows;
+- the `app` schema is NOT in PostgREST's exposed schemas, so the CR-0013
+  decision is intact and PGRST205 remains the expected failure for any future
+  direct table read.
 
 So the wrapper design is verified as correct at the database level. What is still
 NOT verified is that PostgREST can serve them, because PGRST002 blocks every
 request before any function is resolved.
+
 ## Q-19 - ROOT CAUSE of PGRST002: the project has NO exposed schemas
 
 Found: 2026-10-01, from `supabase_logs.json`. This supersedes the speculation in
@@ -519,12 +548,12 @@ request with PGRST002. That is the whole fault.
 
 This explains everything the earlier two rounds could not:
 
-  * why the database was healthy (it was never the problem);
-  * why `anon` and `authenticated` had CONNECT privilege (privileges are fine,
-    the SCHEMA LIST is empty);
-  * why direct Postgres queries worked perfectly while every REST call failed;
-  * why auth worked (`/auth/v1/health` returned 200 throughout) while
-    `/rest/v1/*` returned 503 - they are separate services.
+- why the database was healthy (it was never the problem);
+- why `anon` and `authenticated` had CONNECT privilege (privileges are fine,
+  the SCHEMA LIST is empty);
+- why direct Postgres queries worked perfectly while every REST call failed;
+- why auth worked (`/auth/v1/health` returned 200 throughout) while
+  `/rest/v1/*` returned 503 - they are separate services.
 
 ### Why it matters for CR-0013
 
@@ -553,6 +582,7 @@ box, that is the bug, and the fix is to remove it - not to add more.
 Changing it requires the Dashboard or a Management API personal access token.
 Neither the Supabase CLI token store nor a `SUPABASE_ACCESS_TOKEN` env var is
 present in this environment, so this cannot be automated from the repo.
+
 ## Q-20 - The Supabase April 2026 breaking change, and why this project is exposed to it
 
 Found: 2026-10-01, from the platform changelog, prompted by the Q-19 diagnosis.
@@ -586,15 +616,15 @@ PostgREST had nothing to build a cache from and returned PGRST002 on everything.
 
 Two things make this much less painful than it could have been:
 
-  1. There are **zero tables in `public`**. Every application table lives in
-     `app`, which is not exposed. The table-grant half of the breaking change
-     therefore does not affect us at all, and cannot leak anything.
+1. There are **zero tables in `public`**. Every application table lives in
+   `app`, which is not exposed. The table-grant half of the breaking change
+   therefore does not affect us at all, and cannot leak anything.
 
-  2. Every wrapper and command was written with an EXPLICIT
-     `revoke all ... from public, anon, authenticated` followed by
-     `grant execute ... to service_role`. That is exactly the discipline the
-     changelog is asking every project to adopt, and it was already the pattern
-     here.
+2. Every wrapper and command was written with an EXPLICIT
+   `revoke all ... from public, anon, authenticated` followed by
+   `grant execute ... to service_role`. That is exactly the discipline the
+   changelog is asking every project to adopt, and it was already the pattern
+   here.
 
 Verified against the live database rather than by reading our own SQL:
 
@@ -632,13 +662,14 @@ silently matches nothing is visible (38 total, 0 bad) rather than invisible.
 
 ### Action for this repository
 
-  * No migration change is needed. The grants are already correct and verified.
-  * A new pgTAP suite should assert this, because it is exactly the kind of
-    property that rots. It is written against `information_schema` /
-    `has_function_privilege`, so it needs a database and cannot be a static lint.
-  * `db:types` and any future migration adding a `public` function MUST include an
-    explicit revoke from `anon`, `authenticated` and `PUBLIC`, or the default ACL
-    will expose it. This is now a platform default, not a Supabase convention.
+- No migration change is needed. The grants are already correct and verified.
+- A new pgTAP suite should assert this, because it is exactly the kind of
+  property that rots. It is written against `information_schema` /
+  `has_function_privilege`, so it needs a database and cannot be a static lint.
+- `db:types` and any future migration adding a `public` function MUST include an
+  explicit revoke from `anon`, `authenticated` and `PUBLIC`, or the default ACL
+  will expose it. This is now a platform default, not a Supabase convention.
+
 ## Q-21 - BLOCKING: 26 money-path commands are unreachable through the Data API
 
 Found: 2026-10-01, immediately after the Q-19 exposed-schemas fix was applied.
@@ -754,6 +785,7 @@ schema.
 AGENTS.md rule 4 already anticipates this. The same reasoning applies in reverse
 here: a command with no public entry point is how you get a broken write path
 that passes every security assertion.
+
 ## Q-22 - LIVE SECURITY LEAK: 31 pre-existing wrappers are executable by anon
 
 Found: 2026-10-01, while verifying migration 035.
@@ -823,11 +855,11 @@ population I had defined to exclude the answer.
 
 ### What I got wrong, stated plainly
 
-  * Q-20 reported "wrappers executable by anon: 0". False. It is 31.
-  * I reported that as verified twice, to the user, as a security assurance.
-  * The 47-function "citext" scare was real, but I then used it to reassure
-    myself that the count was noise, instead of re-running the count with an
-    unfiltered population.
+- Q-20 reported "wrappers executable by anon: 0". False. It is 31.
+- I reported that as verified twice, to the user, as a security assurance.
+- The 47-function "citext" scare was real, but I then used it to reassure
+  myself that the count was noise, instead of re-running the count with an
+  unfiltered population.
 
 The invariant I was checking - "is it locked down" - was tested only on
 functions I had already decided were fine.
@@ -858,6 +890,7 @@ records the aliased-column resolver (false positive) and the OUT-parameter check
 (false negative). This is the third, and the most serious, because unlike the
 first two it was a claim about money in a report to the user rather than a lint
 verdict.
+
 ## Q-23 - Default-ACL hardening is only possible for `postgres`, not `supabase_admin`
 
 Follows Q-22. The live database, 2026-10-01.
@@ -914,3 +947,336 @@ distinguish an explicit anon grant from an EXECUTE inherited through PUBLIC.
 The second reads `proacl` directly, which does. A security probe should report
 the mechanism, not only the verdict - the verdict alone did not survive a change
 in ordering.
+
+## Q-24 - pgTAP's `throws_ok` compares the expected message by EXACT equality, not as a regex
+
+Found 2026-10-02 while running `supabase/tests/` for the first time.
+
+The ten pgTAP suites had never been executed, because `supabase test db` needs
+Docker and Docker was unavailable. Running them revealed that 14 assertions across
+five suites could never have passed. They were written as
+
+    throws_ok($$ ... $$, '23514', 'task_definitions_reward_needs_funding', 'description')
+
+on the assumption that the third argument is a pattern matched against the error
+message. It is not. The deployed extension requires `SQLERRM = errmsg` character
+for character, so the expected message must be the whole sentence PostgreSQL emits:
+
+    new row for relation "task_definitions" violates check constraint "task_definitions_reward_needs_funding"
+
+Measured directly against the deployed extension:
+
+    expected errmsg                    result
+    ---------------------------------  ------
+    null (errcode only)                ok
+    the full SQLERRM                   ok
+    the constraint name alone          not ok
+    '.*constraint_name.*'              not ok
+
+### The fourth row is the important one
+
+A regex wrapper fails too, so this is genuine equality rather than an escaping
+mistake. That also rules out the tempting shortcut of passing `null` for the
+message. An errcode plus `null` DOES pass - but almost every check constraint in
+this schema raises `23514`, and a table carries several of them. `throws_ok(sql,
+'23514', null, ...)` is satisfied by the wrong constraint firing, so it is not a
+test of the rule it names.
+
+The fix is to write the whole message. The constraint name is inside it, so the
+assertion still identifies which rule fired, and it now matches what the database
+actually says. All 14 were corrected in CR-0015.
+
+### Two of those 14 were testing the WRONG rule
+
+The full message is what exposed this, and the abbreviated form would have hidden
+it:
+
+- `tasks.sql` test 6 - "a self-attested task cannot be set to auto-verify". Its
+  fixture passed `funding_source_id = null` while also paying 1000, so
+  `task_definitions_reward_needs_funding` fired. The self-attestation rule was
+  never exercised.
+- `risk_moderation.sql` test 10 - "a moderation block must name a reviewer". Its
+  fixture set neither `reason_code` nor `reviewed_by`, and the reason constraint
+  sorts first, so that is the one reported.
+
+Both fixtures were fixed to break exactly the rule under test.
+
+### Standing rule
+
+Write the full message. Do not abbreviate to the constraint name, and do not pass
+`null`. See AGENTS.md, "Database tests (pgTAP) - read this first".
+
+## Q-25 - Casting an enum label to `text` makes `results_eq` unresolvable
+
+Same session. Three suites aborted with
+
+    could not determine which collation to use for string comparison
+
+and because an error inside a `begin; ... rollback;` suite aborts its transaction,
+each of those suites stopped dead - which is why three of them reported zero
+assertions and no plan at all.
+
+The cause is a collation clash that the `::text` cast hides:
+
+    pg_enum.enumlabel  is type `name`,  collation C
+    name::text         is type `text`,   collation C   <- the cast CARRIES it
+    '{A,B}'::text      is type `text`,   collation default (en_US.UTF-8)
+
+PostgreSQL will not guess between two explicitly specified, different collations,
+and `results_eq` compares the two results as values rather than coercing one to the
+other. So `array_agg(e.enumlabel)::text` cannot be compared against a `text`
+literal.
+
+### What was measured
+
+    A  drop the ::text cast on the literal        ERROR (the literal takes the default)
+    B  collate "C" on BOTH sides                  ok
+    C  compare as name[] on both sides            ok
+    D  CONTROL: the form the tests shipped        ERROR
+
+`name[]` was chosen: it removes the offending cast instead of overriding the
+collation, and the labels genuinely ARE names. Three `results_eq` sites were
+converted.
+
+### Why some suites passed all along
+
+`is()` tolerates the same expression that `results_eq()` rejects, which is why four
+vocabulary assertions elsewhere in the corpus were green from the start. The
+difference is in how pgtap implements the two functions, not in the SQL. Anyone
+"simplifying" the `name[]` form back to `::text` for consistency with `is()` will
+re-break three suites.
+
+## Q-26 - The advertiser billing constraint was INVERTED (fixed by migration 037)
+
+This is the finding that made the whole exercise worthwhile, and it is a live
+SCHEMA defect rather than a test defect.
+
+Doc 42 BILLING: "Advertiser charges reconcile to VERIFIED conversions and agreed
+pricing, not raw clicks." Migration 025 tried to enforce that as
+
+    constraint campaign_conversions_unverified_not_charged check (
+      verified = false or charged_amount_minor = 0
+    )
+
+which is the inverse of its own comment ("an UNVERIFIED conversion is never
+billed") and of the document. Evaluated:
+
+    verified = false, charged = 5000   -> TRUE  -> ACCEPTED   <- unverified billing
+    verified = true,  charged = 5000   -> FALSE -> REJECTED   <- a verified charge refused
+    verified = false, charged = 0      -> TRUE  -> accepted
+    verified = true,  charged = 0      -> TRUE  -> accepted
+
+Both halves are wrong, and the second is the louder one: as shipped, a legitimate
+invoice for a verified conversion was UNREPRESENTABLE. The bug would not have shown
+up as an overcharge; it would have shown up as billing that could not be recorded
+at all.
+
+### How it was found
+
+`supabase/tests/growth.sql` asserted exactly this rule and had never been run. The
+tempting move - and the one forbidden by the source-of-truth hierarchy - is to
+relax the assertion to match the database. Doc 42 outranks the migration, so the
+migration is the bug.
+
+### The fix
+
+Migration 037 drops and recreates the constraint with the correct polarity:
+
+    check (verified = true or charged_amount_minor = 0)
+
+Verified live before and after, including the behaviour of both cases above, and
+the row population was counted first (0 rows, 0 rows that the corrected rule would
+reject) so the `alter` could not fail on existing data. The suite's assertion is the
+regression test and was left as it was.
+
+## Q-27 - Four assertions in the corpus could never fail
+
+An assertion that cannot fail is worse than a missing one, because it is counted as
+coverage. Each of these was green-looking and proven nothing.
+
+### 1-3. `throws_ok` recorded "no exception" against an empty table
+
+    insert into app.referrals (code_id, referrer_user_id, referee_user_id)
+    select id, user_id, user_id from app.referral_codes limit 1
+
+`app.referral_codes` is empty, so `limit 1` produced ZERO ROWS, the insert inserted
+nothing, and the statement raised nothing. `throws_ok` reported "caught: no
+exception" and the assertion failed - but for three assertions in one suite the
+same shape would silently pass a variant written with `lives_ok`, and the
+description ("a user cannot refer themselves") would never have been checked.
+
+Fixed by creating the fixture rows the statement needs: an `auth.users` row (required
+by `referral_codes.user_id`) and the referral code itself, selected by value.
+
+### 4. A NULL foreign key died before the rule under test
+
+    values (gen_random_uuid(), (select id from app.game_missions limit 1), -1)
+
+`app.game_missions` is empty, so the subselect is NULL and the insert failed on
+NOT NULL (23502). The rule under test was never reached. Fixed by inserting the
+mission in the same statement.
+
+### The enforcement order that makes fixtures honest
+
+    1. NOT NULL     (23502)  enforced first, while the row is built
+    2. CHECK        (23514)  enforced next, in constraint-NAME order
+    3. FOREIGN KEY  (23503)  checked LAST, after the row is written
+
+Two consequences, both of which bit this corpus:
+
+- A random uuid in an FK column is fine when the CHECK you mean to test is
+  violated, because the CHECK fires first. That is why most fixtures here can use
+  `gen_random_uuid()` for `user_id`.
+- Every NOT NULL column must still be supplied.
+  `payout_destinations.account_identifier` was not, so a method-check assertion was
+  really testing NOT NULL.
+
+And where a fixture breaks TWO constraints, PostgreSQL reports the one sorted first
+by name - which is not necessarily the rule the test names. See Q-24.
+
+## Q-28 - Two suites could not execute at all
+
+Both were invisible for the same reason as Q-24: nothing ran them.
+
+### `withdrawal.sql` ended in a syntax error
+
+The file had `select * from finish(); rollback;` and THEN more SQL:
+
+    select * from finish();
+    rollback;
+      $$
+        insert into app.withdrawal_requests (...)
+        select u.id, 'MINIPAY_MANUAL', 'REQUESTED', d.id, 'NGN', 0, 0, 0
+        ...
+      $$,
+      '23514',
+      'withdrawal_requests_gross_positive',
+      'a zero-amount withdrawal is rejected'
+    );
+
+A `throws_ok` block had been appended AFTER the closing `rollback;` - the signature
+of the same absolute-offset editor defect as Q-11, this time in a test file rather
+than a migration. `plan(20)` counted the 20 assertions in the valid part of the
+file, so the orphan was surplus rather than missing, and the whole file failed to
+parse.
+
+The block asserts a real invariant, so it was RESTORED before `finish()` and the
+plan raised to 21 rather than the fragment being deleted. Two other defects in the
+same file were then reachable: the `split_exact` assertions expected SQLSTATE
+`23505` (unique_violation) for a CHECK constraint, which is `23514`, so they could
+never have passed either.
+
+### `risk_moderation.sql` double-quoted a regex literal
+
+    and p.prosrc ~ "decision <> 'ALLOW'"
+
+In SQL, double quotes delimit an IDENTIFIER. That is not a string, so the statement
+failed with
+
+    column "decision <> 'ALLOW'" does not exist
+
+and aborted the suite at test 20 of a `plan(33)`. Nothing after it had ever been
+evaluated, including the assertion that the risk gate consults the decision at all.
+Fixed to a single-quoted literal with doubled inner quotes.
+
+This is worth separating from Q-24 because the failure mode is different: that one
+produced `not ok` lines, which are visible. This one produced no line at all, and a
+reader scanning for `not ok` would have found none and concluded the suite was fine.
+A suite must be judged against its PLAN, not against the absence of failures - which
+is why the runner asserts `ok + not ok == plan` and treats a missing plan as a
+failure.
+
+## Q-29 - An assertion that contradicted the approved spec, not the code
+
+`game.sql` test 6 asserted that NO game table references a funding source:
+
+    where t.relname like 'game_%' and pg_get_constraintdef(c.oid) ~ 'reward_sources'
+    -- expected 0
+
+It found 1: `app.game_missions.reward_source_id`. Unlike Q-26 this is NOT a code
+defect, and the difference matters.
+
+Doc 25 REWARDS: "Game rewards can be virtual, XP, items, or a FINANCIALLY FUNDED
+reward. Financial rewards route through the Reward Engine." Migration 021 implements
+that reference deliberately, with a five-line comment explaining that it is an
+eligibility reference and never a payout instruction, and CR-0006 records the
+decision. A separate assertion - that no game command function can reach
+`grant_reward`, `post_ledger_entry` or `create_transition` - proves the column
+cannot be used to pay.
+
+So the TEST was over-broad relative to the approved spec, which outranks it. It was
+narrowed to name the one permitted exception rather than relaxed to `>= 0`:
+
+    select coalesce(array_agg(distinct t.relname order by t.relname), '{}'::name[])
+    ... -- expected '{game_missions}'
+
+That keeps the assertion strong in both directions: it fails if the documented
+exception disappears, and it fails the moment any OTHER game table gains a direct
+path to a funding source. Weakening it to a count would have lost both properties.
+
+The lesson is not "the test was wrong, delete it". It is that a failing assertion
+has three possible verdicts - the code is wrong (Q-26), the test is wrong (here), or
+the test is right and unreachable (Q-25, Q-27) - and the source-of-truth hierarchy,
+not convenience, decides which.
+
+## Q-30 - The CI database-tests job was gated on an expression GitHub rejects
+
+Found: 2026-10-02, by reading `.github/workflows/ci.yml` back after the test work had
+been declared complete.
+
+The `db-tests` job carried:
+
+    db-tests:
+      runs-on: ubuntu-latest
+      if: ${{ secrets.SUPABASE_DB_URL != '' }}
+
+The intent was "run the pgTAP suites once a database URL is configured, otherwise
+skip". The effect is different in kind, not in degree. The `secrets` context is not
+available to `jobs.<job_id>.if`, and GitHub validates the file and rejects it:
+
+    The workflow is not valid. .github/workflows/ci.yml (Line: 51, Col: 9):
+    Unrecognized named-value: 'secrets'.
+
+This is documented behaviour rather than a version quirk. The context-availability
+table lists only `github`, `needs`, `vars` and `inputs` for `jobs.<job_id>.if`, and
+`actions/runner#520` is the original report of the identical symptom.
+
+The consequence is the opposite of the intent: the guard would not have skipped one
+job, it would have invalidated the ENTIRE workflow, taking the `verify` job - lint,
+typecheck, unit tests, build and all five `check:*` gates - down with it.
+
+### Why nothing caught it
+
+No gate in this repository reads `.github/workflows/`. `lint`, `typecheck`, each
+`check:*` and both test runners operate on `src/`, `supabase/` and `tools/`. A
+workflow defect therefore has no local detector at all, and a green local run says
+nothing about it. It was found only by reading the file back.
+
+This is a different shape from Q-17 (a lint that false-negatived) and Q-22 (a check
+that filtered its population). Those gates at least ran. Here there was no gate, and
+the file was written and accepted on inspection.
+
+### Fix
+
+The presence test moved into the step, where `secrets` IS available, and is a shell
+test rather than an `if`, so it can also say why it is not running:
+
+      - name: Run database tests
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning title=Database tests did NOT run::..."
+            exit 0
+          fi
+          npm run test:db -- --require-db
+
+A skipped step renders grey and is easy to miss; a `::warning` annotation surfaces on
+the run. The job stays green when the secret is absent, which is the documented
+intent - the database suites are not a launch gate until the URL exists - but the
+skip is stated loudly rather than implied by an invisible condition. When the secret
+IS present, `--require-db` still makes a missing URL fatal, so the job cannot pass by
+executing nothing.
+
+The URL reaches the runner through `env:`, is never echoed, and is never placed on the
+command line, so it cannot reach the job log.

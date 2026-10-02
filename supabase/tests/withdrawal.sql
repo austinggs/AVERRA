@@ -94,7 +94,7 @@ select throws_ok(
     values (gen_random_uuid(), 'MINIPAY_MANUAL', 'AUTOMATIC_ADAPTER', 'DAIMO')
   $$,
   '23514',
-  'payment_operations_mode_matches_method',
+  'new row for relation "payment_operations" violates check constraint "payment_operations_mode_matches_method"',
   'an automatic adapter cannot be attached to a manual method'
 );
 
@@ -104,7 +104,7 @@ select throws_ok(
     values (gen_random_uuid(), 'MINIPAY_MANUAL', 'MANUAL_OPERATOR')
   $$,
   '23514',
-  'payment_operations_attribution_check',
+  'new row for relation "payment_operations" violates check constraint "payment_operations_attribution_check"',
   'a manual payment operation must name the operator who performed it'
 );
 
@@ -114,20 +114,24 @@ select throws_ok(
     values (gen_random_uuid(), 'CRYPTO_AUTOMATIC_DAIMO', 'MANUAL_OPERATOR', gen_random_uuid())
   $$,
   '23514',
-  'payment_operations_mode_matches_method',
+  'new row for relation "payment_operations" violates check constraint "payment_operations_mode_matches_method"',
   'a manual operator cannot be attached to an automatic method'
 );
 
 -- ---------------------------------------------------------------------------
 -- Payout destinations: verification is an explicit human act.
 -- ---------------------------------------------------------------------------
+-- account_identifier is NOT NULL, and NOT NULL is enforced BEFORE check
+-- constraints, so the original fixture died on 23502 and never reached
+-- payout_destinations_method_check. Supplying the identifier lets the method check
+-- be the failure this test actually observes.
 select throws_ok(
   $$
-    insert into app.payout_destinations (user_id, method, status)
-    values (gen_random_uuid(), 'PAYPAL', 'VERIFIED')
+    insert into app.payout_destinations (user_id, method, account_identifier, status)
+    values (gen_random_uuid(), 'PAYPAL', 'fixture', 'VERIFIED')
   $$,
   '23514',
-  'payout_destinations_method_check',
+  'new row for relation "payout_destinations" violates check constraint "payout_destinations_method_check"',
   'an unrecognised payout method is rejected'
 );
 

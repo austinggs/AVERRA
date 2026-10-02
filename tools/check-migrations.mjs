@@ -471,10 +471,18 @@ function collectDeclaredFunctions() {
           }
           continue;
         }
-        if (ch === "'") { inStr = true; cur += ch; continue; }
+        if (ch === "'") {
+          inStr = true;
+          cur += ch;
+          continue;
+        }
         if (ch === '(') depth += 1;
         if (ch === ')') depth -= 1;
-        if (ch === ',' && depth === 0) { params.push(cur); cur = ''; continue; }
+        if (ch === ',' && depth === 0) {
+          params.push(cur);
+          cur = '';
+          continue;
+        }
         cur += ch;
       }
       if (cur.trim()) params.push(cur);
@@ -509,7 +517,9 @@ function checkDelegateArity(source, lines, file, declared) {
     if (!body) continue;
 
     // `select schema.fn(args)` or `perform schema.fn(args)`.
-    const calls = body.matchAll(/\b(?:select|perform)\s+([A-Za-z_][\w]*\.[A-Za-z_][\w]*)\s*\(([^()]*)\)/gi);
+    const calls = body.matchAll(
+      /\b(?:select|perform)\s+([A-Za-z_][\w]*\.[A-Za-z_][\w]*)\s*\(([^()]*)\)/gi,
+    );
 
     for (const call of calls) {
       const qualified = call[1].toLowerCase();

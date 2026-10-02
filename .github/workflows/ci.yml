@@ -48,11 +48,42 @@ jobs:
   # been pushed. Enable by providing SUPABASE_DB_URL as a repository secret.
   db-tests:
     runs-on: ubuntu-latest
-    if: ${{ secrets.SUPABASE_DB_URL != '' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+      - uses: actions/setup-node@v4
         with:
-          version: latest
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The presence test is a SHELL test, deliberately NOT a job-level `if`. The
+      # `secrets` context is not available to `jobs.<job_id>.if`, and GitHub does
+      # not merely treat that as false - it rejects the whole workflow file with
+      # "Unrecognized named-value: 'secrets'". A job-level guard here would
+      # invalidate CI, not skip the job.
+      #
+      # The URL is passed through the environment rather than the command line, and
+      # is never echoed, so it cannot reach the job log.
+      #
+      # `--require-db` makes a missing URL FATAL instead of a skip, so this job
+      # cannot go green having executed nothing. The runner applies the same rule
+      # to an individual suite: one that produces no assertions fails rather than
+      # passing quietly. Both guards exist because a `0 bad` result from an empty
+      # population was once reported in this repository as a security assurance.
+      #
+      # The secret must be the POOLER connection string, NOT the direct one:
+      #   postgres://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres
+      # `db.<project-ref>.supabase.co` has resolved to IPv6 ONLY since January 2024
+      # (Supabase "PGBouncer and IPv4 Deprecation"), and a GitHub-hosted runner has no
+      # IPv6 route, so the direct URL fails this job with `getaddrinfo ENOTFOUND`
+      # before a single assertion runs. Supabase names GitHub Actions explicitly as an
+      # environment that must use Supavisor, which still returns IPv4. The same rule
+      # applies to `supabase db push` run from this machine.
       - name: Run database tests
-        run: supabase test db --db-url "${{ secrets.SUPABASE_DB_URL }}"
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning title=Database tests did NOT run::SUPABASE_DB_URL is not configured as a repository secret, so the 10 pgTAP suites were skipped. Add it to enable this gate."
+            exit 0
+          fi
+          npm run test:db -- --require-db

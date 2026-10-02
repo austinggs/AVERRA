@@ -19,15 +19,39 @@ select has_table('app', 'campaigns', 'campaigns exist');
 select has_table('app', 'campaign_conversions', 'campaign conversions exist');
 
 -- ---------------------------------------------------------------------------
+-- FIXTURE. Four assertions below select from app.referral_codes, which is empty.
+-- `... from app.referral_codes limit 1` therefore produced ZERO ROWS, the insert
+-- inserted nothing, and `throws_ok` recorded "no exception": an assertion that
+-- cannot fail proves nothing, and it hid a live schema defect (see test 13). The
+-- code and the account it belongs to are created here once, and the tests below
+-- select that code by value.
+--
+-- A real auth.users row is required because referral_codes.user_id REFERENCES
+-- auth.users(id). Everything in this file is rolled back.
+-- ---------------------------------------------------------------------------
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at
+)
+values (
+  '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
+  'authenticated', 'authenticated', 'pgtap-referrer@example.invalid',
+  '', now(), now(), now()
+);
+
+insert into app.referral_codes (user_id, code)
+select id, 'PGTAPREF01' from auth.users where email = 'pgtap-referrer@example.invalid';
+
+-- ---------------------------------------------------------------------------
 -- DOC 39 ANTI-ABUSE: self-referral is impossible, not merely detected.
 -- ---------------------------------------------------------------------------
 select throws_ok(
   $$
     insert into app.referrals (code_id, referrer_user_id, referee_user_id)
-    select id, user_id, user_id from app.referral_codes limit 1
+    select id, user_id, user_id from app.referral_codes where code = 'PGTAPREF01'
   $$,
   '23514',
-  'referrals_no_self_referral',
+  'new row for relation "referrals" violates check constraint "referrals_no_self_referral"',
   'a user cannot refer themselves'
 );
 
@@ -45,10 +69,10 @@ select throws_ok(
   $$
     insert into app.referrals (code_id, referrer_user_id, referee_user_id, status)
     select id, user_id, gen_random_uuid(), 'QUALIFIED'
-    from app.referral_codes limit 1
+    from app.referral_codes where code = 'PGTAPREF01'
   $$,
   '23514',
-  'referrals_qualified_needs_event',
+  'new row for relation "referrals" violates check constraint "referrals_qualified_needs_event"',
   'a referral cannot be qualified without naming its qualifying event'
 );
 
@@ -56,10 +80,10 @@ select throws_ok(
   $$
     insert into app.referrals (code_id, referrer_user_id, referee_user_id, status)
     select id, user_id, gen_random_uuid(), 'REWARDED'
-    from app.referral_codes limit 1
+    from app.referral_codes where code = 'PGTAPREF01'
   $$,
   '23514',
-  'referrals_qualified_needs_event',
+  'new row for relation "referrals" violates check constraint "referrals_qualified_needs_event"',
   'a referral cannot be rewarded without naming its qualifying event'
 );
 
@@ -75,10 +99,10 @@ select throws_ok(
     select id, user_id, gen_random_uuid(), 'REWARDED',
            gen_random_uuid(), now(),
            (select id from app.reward_sources limit 1)
-    from app.referral_codes limit 1
+    from app.referral_codes where code = 'PGTAPREF01'
   $$,
   '23514',
-  'referrals_rewarded_needs_reward',
+  'new row for relation "referrals" violates check constraint "referrals_rewarded_needs_reward"',
   'a rewarded referral must name the reward it created'
 );
 
@@ -107,18 +131,24 @@ select throws_ok(
     values (gen_random_uuid(), 'Underfunded', 'LIVE', 100, 100000)
   $$,
   '23514',
-  'campaign_budget_reservation_covers_promise',
+  'new row for relation "campaigns" violates check constraint "campaign_budget_reservation_covers_promise"',
   'a campaign cannot go live with a reservation below its maximum exposure'
 );
 
 -- Doc 42 BILLING: an unverified conversion is never billed.
+--
+-- This assertion found a REAL DEFECT and is why it is not weakened to suit the
+-- database. Migration 025 shipped `verified = false or charged_amount_minor = 0`,
+-- which permits billing an UNVERIFIED conversion and refuses a charge on a
+-- VERIFIED one - the opposite of doc 42 BILLING and of its own comment. Migration
+-- 037 corrects the polarity; this test is the regression proof.
 select throws_ok(
   $$
     insert into app.campaign_conversions (campaign_id, verified, charged_amount_minor)
     values (gen_random_uuid(), false, 5000)
   $$,
   '23514',
-  'campaign_conversions_unverified_not_charged',
+  'new row for relation "campaign_conversions" violates check constraint "campaign_conversions_unverified_not_charged"',
   'an unverified conversion cannot be billed'
 );
 
@@ -129,7 +159,7 @@ select throws_ok(
     values (gen_random_uuid(), 'Overspent', 100, 500)
   $$,
   '23514',
-  'campaigns_spent_within_reserved',
+  'new row for relation "campaigns" violates check constraint "campaigns_spent_within_reserved"',
   'a campaign cannot spend beyond its reservation'
 );
 

@@ -55,7 +55,8 @@ npm run build # production build
 npm run lint # eslint
 npm run typecheck # tsc --noEmit
 npm test # vitest
-npm run test:db # supabase pgTAP db tests (needs Docker or a linked project)
+npm run test:db # pgTAP suites against SUPABASE_DB_URL; needs no Docker
+npm run test:db:cli # supabase test db (pg_prove; needs Docker or a linked project)
 npm run e2e # playwright
 npm run db:push # apply migrations to the linked database
 npm run db:types # regenerate database types
@@ -106,8 +107,11 @@ state change. See docs/adr/.
   provider conversions). 035 the public entry points for those 26 commands, because
   PostgREST can only resolve an RPC against an exposed schema. 036 the revocation of
   the anon EXECUTE grant on 29 wrappers. Money moves ONLY through `app_private` functions.
-- `supabase/tests/` - pgTAP suites (173 assertions, 10 files). NOT yet executed; Docker was
-  unavailable on the development machine.
+- `supabase/tests/` - pgTAP suites (176 assertions, 10 files). Executed and green as
+  of CR-0015; run them with `npm run test:db`, which needs no Docker. Until then they
+  had NEVER run, and every one of the ten held at least one defect.
+- `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
+  assertions, and on a plan that does not match the count executed.
 - `src/lib/auth/` - verified session and capability guards. Fail-closed.
 - `src/lib/api/` - route wrapper, error envelope, actor-scoped idempotency keys.
 - `src/lib/contracts/states.ts` - mirrors the database state enums.
@@ -271,6 +275,115 @@ must not silently rewrite financial history". Enforced two ways:
 A decision is append-only. An appeal adds a NEW row via `superseded_by_id`; the
 original is never edited.
 
+## Database tests (pgTAP) - read this first
+
+`npm run test:db` runs `tools/run-db-tests.mjs`, which connects to
+`SUPABASE_DB_URL` and executes `supabase/tests/*.sql`. It exists because
+`supabase test db` needs Docker, Docker was unavailable, so the ten suites went
+unexecuted for the life of the project - and EVERY one of them held at least one
+defect. `npm run test:db:cli` is the canonical pg_prove path when Docker or a
+linked database is available.
+
+The runner reads `SUPABASE_DB_URL` from the process environment ONLY. It does not load
+`.env.local`, so in a fresh shell `npm run test:db` prints
+`SKIP ... a skip, not a pass` and exits 0 instead of failing; export the URL first.
+Export the POOLER string, never the direct one: `db.<ref>.supabase.co` has been
+IPv6-only since January 2024 and a GitHub-hosted runner is IPv4-only, so the direct
+form dies with `getaddrinfo ENOTFOUND` before one assertion runs. Note that
+`supabase/.temp/pooler-url` holds that host with NO password, while `.env.local` holds
+the password against the direct host, so neither file alone is usable. See Q-16.
+
+Two properties of pgTAP itself cost most of that time. Both are properties of the
+tool rather than of the tests, and both explain why the suites now read as they do.
+
+### `throws_ok` compares the expected error message by EXACT equality
+
+`throws_ok(sql, errcode, errmsg, description)` requires `SQLERRM = errmsg`
+character for character. It is NOT a pattern match, so
+`throws_ok(sql, '23514', 'some_constraint', ...)` can never pass: the real
+`SQLERRM` is the whole sentence.
+
+    new row for relation "task_definitions" violates check constraint "task_definitions_paying_task_needs_verification"
+
+Measured against the deployed extension on 2026-10-02:
+
+| expected `errmsg`         | result |
+| ------------------------- | ------ |
+| `null` (errcode only)     | ok     |
+| the full `SQLERRM`        | ok     |
+| the constraint name alone | not ok |
+| `.*constraint_name.*`     | not ok |
+
+The last row is the one that matters. An errcode plus `null` passes, and it is
+tempting because it is short, but it is a much weaker assertion: most checks in
+this schema are `23514`, and one table carries several of them, so an errcode
+alone is also satisfied by the WRONG constraint on the same table. Write the whole
+message; the constraint name inside it is what identifies which rule fired.
+
+Do NOT "tidy" these back into bare constraint names. `tasks.sql` test 6 and
+`risk_moderation.sql` test 10 were each written to prove one rule while actually
+reporting a different one, and only the full message made that visible.
+
+### `pg_enum.enumlabel` is type `name`, and casting it to text carries collation C
+
+    -- FAILS: could not determine which collation to use for string comparison
+    results_eq($$ select array_agg(e.enumlabel order by e.enumsortorder)::text $$,
+               $$ values ('{A,B}'::text) $$)
+
+`name` has collation C. The `::text` cast carries C onto the result, and the
+literal on the right has the database default (`en_US.UTF-8`). PostgreSQL refuses
+to guess between two explicit collations. Compare the labels as `name[]`, which is
+what they are:
+
+    results_eq($$ select array_agg(e.enumlabel order by e.enumsortorder) $$,
+               $$ values ('{A,B}'::name[]) $$)
+
+`is()` tolerates the `::text` form and `results_eq()` does not, which is why some
+vocabulary assertions passed all along while their `results_eq()` twins failed.
+Adding `collate "C"` to both sides also works; `name[]` is preferred because it
+removes the cast instead of overriding the collation.
+
+### A fixture must make the assertion reachable
+
+An assertion that cannot fail is worse than a missing one, because it is counted as
+coverage. Four in this corpus could not fail:
+
+- a statement selecting from an EMPTY table (`... from app.referral_codes limit 1`)
+  inserted zero rows, so `throws_ok` recorded "no exception";
+- a NULL foreign key (`(select id from app.game_missions limit 1)`) died on NOT NULL
+  (23502) long before the rule under test;
+- two fixtures broke two constraints at once, and so reported whichever PostgreSQL
+  evaluates first - not the rule they were written to check.
+
+The order in which PostgreSQL enforces things is what makes a fixture honest:
+
+    1. NOT NULL     (23502)  enforced first, while the row is built
+    2. CHECK        (23514)  enforced next, in constraint-NAME order
+    3. FOREIGN KEY  (23503)  checked LAST, after the row is written
+
+So a fixture may put a random uuid in an FK column and still reach the CHECK it
+means to test - but only if every NOT NULL column is supplied.
+`payout_destinations.account_identifier` was not, and that assertion never ran.
+
+### The runner fails loudly, and that was proven
+
+`tools/run-db-tests.mjs` prints the population beside the bad count and treats a
+suite that produced no assertions as a FAILURE, so a suite that silently stops
+running cannot pass. Three defects were injected to prove it reports them, and the
+suite was restored byte-identically afterwards:
+
+- one failing assertion (plan adjusted to match) -> exit 1, `1 failed assertion(s)`
+- a suite with no assertions at all -> exit 1, `produced no assertions at all`
+- a SQL error mid-suite -> exit 1, reported while STILL showing the assertions that
+  had already passed
+
+That third case is why TAP is collected per statement. Run as one batch,
+node-postgres discards every result when the batch throws, so a suite with one bad
+statement would have printed `ok 13/13` and looked green. Each suite also gets its
+OWN connection: every suite is `begin; ... rollback;`, an error aborts the
+transaction, and ten suites down one connection would turn one real failure into
+ten.
+
 ## Editing SQL migrations - read this first
 
 An editor call with an absolute `insert_line` offset can split a PL/pgSQL function
@@ -385,3 +498,29 @@ cannot see that `from balances b` rebinds the name.
 Do not re-add it without first proving it reports zero errors on the existing
 migrations. A noisy lint gets ignored, and once ignored it would also mask the
 real defects the other five checks catch.
+
+## `.github/workflows/` has no local gate, and `secrets` cannot gate a job
+
+`lint`, `typecheck`, both test runners and all five `check:*` gates operate on
+`src/`, `supabase/` and `tools/`. **Nothing in this repository parses
+`.github/workflows/ci.yml`**, so a workflow defect is invisible until GitHub
+rejects the run. One did exactly that. The `db-tests` job was gated with
+
+    if: ${{ secrets.SUPABASE_DB_URL != '' }}     # INVALID
+
+The `secrets` context is not available to `jobs.<job_id>.if`. GitHub does not treat
+that as false - it refuses the whole workflow file:
+
+    The workflow is not valid. .github/workflows/ci.yml (Line: 51, Col: 9):
+    Unrecognized named-value: 'secrets'.
+
+So that guard would not have skipped one job; it would have stopped CI from running
+at all, including `verify`. `secrets` IS available to `jobs.<job_id>.steps[*].if`
+and to `env:`/`run:`, so a presence test belongs in a step. It is now a shell test
+that emits a `::warning` annotation when the secret is absent, because a step that
+quietly does nothing is the same `0 bad` failure mode as the empty population.
+
+The general rule: a YAML condition that can never be true and one that is not even
+legal are equally invisible to a green local run. Check workflow expressions against
+the context-availability table, not against intuition. See `docs/DISCREPANCIES.md`
+Q-30.

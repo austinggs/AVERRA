@@ -87,17 +87,22 @@ select throws_ok(
     values ('PROFILE', 'spam text', 'APPROVED')
   $$,
   '23514',
-  'moderation_items_reviewed_needs_reason',
+  'new row for relation "moderation_items" violates check constraint "moderation_items_reviewed_needs_reason"',
   'a moderation approval must carry a reason code'
 );
 
+-- blocked with neither field violates BOTH reviewed_needs_reason and
+-- reviewed_needs_reviewer, and PostgreSQL reports the first one it evaluates
+-- (the constraints are checked in name order). So the original fixture reported
+-- the REASON constraint and this assertion never tested the reviewer rule. Naming
+-- a reason leaves only the missing reviewer to fail.
 select throws_ok(
   $$
-    insert into app.moderation_items (target_type, content, status)
-    values ('PROFILE', 'spam text', 'BLOCKED')
+    insert into app.moderation_items (target_type, content, status, reason_code)
+    values ('PROFILE', 'spam text', 'BLOCKED', 'spam')
   $$,
   '23514',
-  'moderation_items_reviewed_needs_reviewer',
+  'new row for relation "moderation_items" violates check constraint "moderation_items_reviewed_needs_reviewer"',
   'a moderation block must name a reviewer'
 );
 
@@ -240,6 +245,10 @@ select results_eq(
 
 -- The decision spectrum. Doc 40 lists these; only ALLOW permits a credit, so the
 -- helper must treat every other value as blocking.
+-- The pattern must be a single-quoted SQL literal. It was written in double
+-- quotes, which makes it an IDENTIFIER in SQL, so the query failed with
+-- `column "decision <> 'ALLOW'" does not exist` and aborted the whole suite at
+-- this statement - which is why the plan was never completed.
 select results_eq(
   $$
     select count(*)
@@ -247,7 +256,7 @@ select results_eq(
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'app_private'
       and p.proname = 'reward_blocked_by_risk'
-      and p.prosrc ~ "decision <> 'ALLOW'"
+      and p.prosrc ~ 'decision\s*<>\s*''ALLOW'''
   $$,
   $$ values (1::bigint) $$,
   'the risk gate blocks on any decision that is not ALLOW'

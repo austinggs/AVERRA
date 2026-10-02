@@ -359,7 +359,9 @@ async function main() {
 
     if (verbose) {
       for (const a of assertions) {
-        console.log('        ' + (a.ok ? 'ok    ' : 'NOT OK') + ' ' + a.number + ' - ' + a.description);
+        console.log(
+          '        ' + (a.ok ? 'ok    ' : 'NOT OK') + ' ' + a.number + ' - ' + a.description,
+        );
       }
     }
 
@@ -399,4 +401,3 @@ main().catch((error) => {
   console.error('runner crashed: ' + (error && error.stack ? error.stack : error));
   process.exitCode = 1;
 });
-

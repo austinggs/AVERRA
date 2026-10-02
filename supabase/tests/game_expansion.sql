@@ -79,7 +79,7 @@ select throws_ok(
     values (gen_random_uuid(), 'Negative', -1)
   $$,
   '23514',
-  'game_leaderboard_entries_score_non_negative',
+  'new row for relation "game_leaderboard_entries" violates check constraint "game_leaderboard_entries_score_non_negative"',
   'a leaderboard score cannot be negative'
 );
 
@@ -116,13 +116,23 @@ select results_eq(
 
 -- Progress can never run backwards, so a replayed event cannot reduce a counter
 -- the player has already earned.
+-- The fixture must create the mission it references. `(select id from
+-- app.game_missions limit 1)` evaluates to NULL because no mission is seeded, so
+-- the insert died on the NOT NULL constraint for mission_id (23502) and never
+-- reached the rule under test. Inserting the mission in the same statement puts
+-- mission progress in front of the rule it claims to test.
 select throws_ok(
   $$
+    with mission as (
+      insert into app.game_missions (code, name)
+      values ('progress_fixture', 'Progress fixture')
+      returning id
+    )
     insert into app.game_mission_progress (user_id, mission_id, progress)
-    values (gen_random_uuid(), (select id from app.game_missions limit 1), -1)
+    select gen_random_uuid(), mission.id, -1 from mission
   $$,
   '23514',
-  'game_mission_progress_non_negative',
+  'new row for relation "game_mission_progress" violates check constraint "game_mission_progress_non_negative"',
   'mission progress cannot be negative'
 );
 
@@ -164,7 +174,7 @@ select throws_ok(
     values ('bad_window', 'Inverted', now() + interval '1 hour', now())
   $$,
   '23514',
-  'game_events_window_ordered',
+  'new row for relation "game_events_window" violates check constraint "game_events_window_ordered"',
   'an event window must end after it starts'
 );
 

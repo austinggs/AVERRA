@@ -20,6 +20,13 @@ next-env.d.ts
 .DS_Store
 *.log
 
+# --- scratch ---
+# Throwaway probe scripts written while debugging against the live database.
+# Five of these (tmp-auth.cjs, tmp-col.cjs, tmp-d.cjs, tmp-e.cjs, tmp-q.cjs)
+# were once committed by accident; they are never part of the deliverable.
+tmp-*
+tmp_*
+
 # --- supabase local ---
 supabase/.temp/
 supabase/.branches/

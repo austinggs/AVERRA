@@ -180,8 +180,19 @@ nothing about that file.
   POOLER form. `.env.local` currently holds the DIRECT form, `db.<ref>.supabase.co`,
   which cannot connect from an IPv4-only host, and `supabase/.temp/pooler-url` holds
   the pooler host but with NO password in it. Neither file alone is usable; a working
-  URL is the pooler host plus the password from `.env.local`. Two consequences worth
-  knowing before debugging anything here:
+  URL is the pooler host plus the password from `.env.local`.
+
+  There is a THIRD credential file, `supabase.md` (gitignored), which lists a publishable
+  key and a direct connection string. Its password is a DIFFERENT value from the one in
+  `.env.local`, and only the `.env.local` one is live - so copying the URL out of
+  `supabase.md` produces a password authentication failure, not a DNS failure, and looks
+  like a different problem. Compare the two before debugging, and refresh or delete
+  `supabase.md` at the same time as the rotation rather than leaving a stale copy of a
+  credential lying around. Verified 2026-10-02: neither `supabase.md` nor `.env.local`
+  is tracked by git (`.gitignore` covers both), so this is a plaintext-on-disk exposure,
+  not a repository exposure.
+
+  Two consequences worth knowing before debugging anything here:
 
   - The runner reads only the process environment. Unlike `next dev` it does not load
     `.env.local`, so `npm run test:db` in a fresh shell prints a `SKIP` line and exits 0

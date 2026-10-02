@@ -1,0 +1,30 @@
+AVERRA — AVERRA — PROVIDER ELIGIBILITY MATRIX
+
+Document: 07_PROVIDER_ELIGIBILITY_MATRIX.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Operational matrix for deciding whether a provider may be integrated or used in production.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+REQUIRED COLUMNS
+Provider, type, Nigeria availability, incentive compatibility, API/postback support, signature/auth mechanism, conversion states, reversal support, settlement terms, payout currency/rail, commercial approval, compliance review, integration owner, status, last verification date.
+
+DECISION GATES
+A provider cannot be marked live without successful technical integration tests, callback authenticity validation, duplicate/replay tests, economic validation, and business/compliance approval.
+
+DYNAMIC NATURE
+Matrix entries expire and must be revalidated. “Known to exist” is not equivalent to “currently approved for Averra.”
+
+TESTING RULE
+Testing must use sandbox/provider-approved mechanisms or controlled non-production traffic. Owner self-completion of live incentivized offers is prohibited.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

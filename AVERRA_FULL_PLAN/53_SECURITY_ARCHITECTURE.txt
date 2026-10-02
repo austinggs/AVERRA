@@ -1,0 +1,50 @@
+AVERRA — AVERRA — SECURITY ARCHITECTURE
+
+Document: 53_SECURITY_ARCHITECTURE.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines platform security controls and threat boundaries.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+PRINCIPLES
+Zero trust between client and server, least privilege, defense in depth, secure defaults, auditable privileged operations.
+
+IDENTITY
+Session revocation, secure cookies/tokens, MFA/admin hardening, credential recovery controls, rate limits.
+
+FINANCIAL SECURITY
+Idempotency, concurrency control, ledger immutability, destination verification, withdrawal risk checks, operator attribution, payout evidence.
+
+INTEGRATION SECURITY
+Webhook signatures/secrets, secret rotation, IP allowlisting only when reliable, TLS, time-window/replay controls, raw payload retention, adapter isolation.
+
+GAME SECURITY
+Server authority, anti-replay/action IDs, state versioning, bot/risk signals, no trust in client-generated resource/reward values.
+
+SECRETS
+Use secret manager/environment configuration; never commit provider keys or user secrets.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+
+TELEGRAM SUPPORT SECURITY
+@vipaverra is an external contact channel and must be treated as lower-trust than authenticated in-app support. Never accept passwords, OTPs, seed phrases, private keys, or wallet secrets through Telegram. A Telegram message cannot authorize a financial mutation. Operators must verify the user's Averra identity through approved account context before discussing sensitive account details, and must move material cases into the in-app ticket system.
+
+REVIEWS / MEDIA SECURITY
+Apply strict RLS and authorization to reviews/comments/reports. Validate uploaded bytes and media metadata server-side. Prevent path traversal and predictable private-object access. Strip unnecessary metadata where practical. Rate-limit review/comment/report operations. Audit privileged moderation actions. Never expose transaction evidence, private support records, or internal moderation notes through public review APIs.
+
+SUPABASE SECRET BOUNDARY
+Supabase service-role/secret credentials must never be exposed to the browser. Use publishable client credentials only where appropriate and route privileged operations through trusted server-side code. Current Supabase changes also require deliberate handling of public-schema Data API exposure.
+
+
+## V7 Admin Security
+Privileged admin operations require least privilege, strong session controls, server-side authorization, audit logging, and dual control for configured high-risk actions. Supabase service-role/secret credentials remain server-only.

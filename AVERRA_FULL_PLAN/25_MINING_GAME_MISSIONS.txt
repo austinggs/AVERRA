@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME MISSIONS
+
+Document: 25_MINING_GAME_MISSIONS.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines missions, objectives, progression, claims, and reward rules.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+MISSION MODEL
+Mission definition, objective set, progress counters, eligibility, start/end, completion, claim status, and reward reference.
+
+PROGRESS
+Server-side events advance mission progress; client displays derived progress.
+
+CLAIMING
+Claim is an idempotent authoritative action. A mission cannot pay twice.
+
+REWARDS
+Game rewards can be virtual, XP, items, or a financially funded reward. Financial rewards route through the Reward Engine.
+
+EXPIRATION
+Expired missions preserve history and do not silently become payable.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

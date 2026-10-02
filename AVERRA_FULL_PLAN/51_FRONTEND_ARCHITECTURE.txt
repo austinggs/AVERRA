@@ -1,0 +1,28 @@
+AVERRA — FRONTEND ARCHITECTURE
+
+Document: 51_FRONTEND_ARCHITECTURE.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines application UI architecture and financial state separation.
+
+FINANCIAL UX
+The wallet UI MUST distinguish Earned Reward Balance from User Funding Balance. Deposit screens display method, asset, Celo network requirement, destination, QR, warning, declared amount, request reference, expiry, transaction submission, verification status, and admin confirmation status.
+
+MANUAL MINIPAY CRYPTO UI
+Display:
+- Network: Celo
+- Supported tokens: USDT, USDC, USDm, USAT
+- “Native CELO is not accepted.”
+- Prominent warning: “Unsupported tokens or the wrong network will lead to loss of funds.”
+- Copy/share destination controls and “Show QR code”.
+- “I’ve sent payment” action with tx-hash submission.
+- Clear state labels: Pending, Submitted, Verified, Confirmed, Needs Review, Expired, Rejected.
+
+SERVER AUTHORITY
+Client may submit evidence but cannot approve, verify, credit, or mutate balances. Optimistic UI is restricted to presentation and reconciles with server truth.
+
+REVIEWS / COMMUNITY CLIENT
+The frontend renders public reviews, ratings, comment threads, image previews, upload progress, reports, and notification states. It must treat server-returned review status and permissions as authoritative. Client state cannot publish, verify, moderate, or alter review ownership without server authorization.

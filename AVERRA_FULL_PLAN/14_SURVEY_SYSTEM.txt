@@ -1,0 +1,33 @@
+AVERRA — AVERRA — SURVEY SYSTEM
+
+Document: 14_SURVEY_SYSTEM.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines survey discovery, qualification, completion, provider verification, and reward handling.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+QUALIFICATION
+Survey qualification is not completion and must have its own status.
+
+LIFECYCLE
+available → started → qualifying → qualified/ineligible → completed → provider_verified → pending reward → available/reversed.
+
+TRACKING
+Record provider, survey ID, respondent/session ID, start/finish timestamps, qualification outcome, callback evidence, and reward state.
+
+ABUSE
+Detect duplicate participation, speed anomalies, device/account overlap, answer-quality signals, and provider-reported fraud flags.
+
+USER MESSAGING
+Explain that qualification can fail and that final reward status depends on provider verification.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

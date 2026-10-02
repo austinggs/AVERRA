@@ -1,0 +1,33 @@
+AVERRA — AVERRA — PROVIDER INTEGRATION
+
+Document: 08_PROVIDER_INTEGRATION.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Technical contract for external earning-provider adapters, callbacks, reconciliation, and normalization.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+ADAPTER INTERFACE
+getOffers(), getSurveys(), createTrackingLink(), handleCallback(), verifyCallback(), normalizeReward(), normalizeStatus(), reconcile().
+
+CALLBACK REQUIREMENTS
+Authenticate origin, validate signatures/tokens, validate required fields, validate provider/campaign/event identifiers, enforce timestamp/replay protections where supported, apply idempotency, and record raw evidence.
+
+NORMALIZED EVENT
+provider_event_id, provider, source_type, campaign_id, user/tracking_id, event_type, status, gross_value, currency, timestamp, signature metadata, raw payload reference, normalized payload, processing result.
+
+FINANCIAL BOUNDARY
+A callback does not directly write the wallet. It produces a validated business event consumed by the reward engine.
+
+RECONCILIATION
+Scheduled jobs compare provider events, local conversions, reward ledger entries, and settlement reports; mismatches are queued for investigation.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

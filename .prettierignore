@@ -1,0 +1,12 @@
+# NEVER reformat the source-of-truth specification corpus
+AVERRA_FULL_PLAN
+AVERRA_V7_AUDIT.md
+supabase.md
+
+node_modules
+.next
+out
+coverage
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts

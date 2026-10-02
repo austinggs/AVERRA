@@ -1,0 +1,21 @@
+AVERRA — REVENUE MODEL
+
+Document: 04_REVENUE_MODEL.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines gross revenue, receivables, margin, user-funded deposits, fees, and reporting.
+
+FINANCIAL CONCEPTS
+Provider Gross Revenue, Provider Receivable, Provider Settled Revenue, User Reward Liability, User Funding Balance, User-Funded Deposit Obligation/Balance where applicable, Platform Margin, Service/Maintenance Fees, Paid Perk Revenue, Donations, Chargebacks, and reserves.
+
+USER-FUNDED DEPOSITS
+A confirmed MiniPay crypto deposit is recorded as user funding, not revenue and not earned reward. Any amount later spent on Averra services is recognized through the applicable purchase/service accounting. The original deposit evidence and amount remain traceable.
+
+SERVICE/MAINTENANCE FEE
+15% of eligible gross withdrawal. Display gross/fee/net before confirmation. Record fee separately. Not applied to ordinary user-funded deposits.
+
+VALUATION
+For stablecoin deposits, retain native on-chain amount. Where a normalized platform valuation is needed, store rate/source/timestamp and do not rewrite source-asset records.

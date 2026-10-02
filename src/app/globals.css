@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   Averra design tokens
+   ---------------------------------------------------------------------------
+   Visual direction: the DESIGNS/ references informed the register (a warm,
+   vivid green, pill-shaped controls, generous radii, large numerals, mobile
+   first). The layout, type scale and component composition are our own.
+
+   The colours below are design decisions ONLY. Nothing here may encode a
+   financial state. Money state is rendered by the MoneyState component, which
+   derives colour from the database state rather than from a caller's choice,
+   so "pending" can never be styled to look like "settled".
+   =========================================================================== */
+
+@theme {
+  /* Brand. A vivid, confident green. Enough contrast against white for text
+     at large sizes and for icon fills; never used as body text on white. */
+  --color-brand-50: oklch(0.97 0.03 150);
+  --color-brand-100: oklch(0.94 0.07 150);
+  --color-brand-200: oklch(0.88 0.13 150);
+  --color-brand-300: oklch(0.8 0.17 150);
+  --color-brand-400: oklch(0.71 0.19 150);
+  --color-brand-500: oklch(0.63 0.19 150);
+  --color-brand-600: oklch(0.53 0.16 150);
+  --color-brand-700: oklch(0.44 0.13 150);
+  --color-brand-800: oklch(0.36 0.1 150);
+  --color-brand-900: oklch(0.29 0.08 150);
+
+  /* Warm surface tint, used behind cards the way the references do. */
+  --color-canvas: oklch(0.98 0.012 150);
+  --color-surface: oklch(1 0 0);
+  --color-surface-sunken: oklch(0.965 0.008 150);
+
+  /* Ink. Warm-tinted rather than pure slate, so it sits with the green. */
+  --color-ink-900: oklch(0.21 0.015 160);
+  --color-ink-700: oklch(0.36 0.015 160);
+  --color-ink-500: oklch(0.52 0.015 160);
+  --color-ink-400: oklch(0.63 0.012 160);
+  --color-ink-200: oklch(0.9 0.008 160);
+  --color-ink-100: oklch(0.95 0.006 160);
+
+  /* Gamification accent. Reserved for XP, levels, streaks and badges ONLY.
+     Never used for a financial amount, so a virtual reward can never be
+     mistaken for money (doc 47 SEPARATION). */
+  --color-gamify-400: oklch(0.86 0.16 92);
+  --color-gamify-500: oklch(0.79 0.16 86);
+  --color-gamify-600: oklch(0.7 0.15 80);
+
+  /* Radii. Generous, matching the pill language of the references. */
+  --radius-pill: 999px;
+  --radius-card: 1.25rem;
+  --radius-tile: 1rem;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --shadow-tile: 0 1px 2px oklch(0.21 0.015 160 / 0.05);
+  --shadow-card: 0 2px 12px oklch(0.21 0.015 160 / 0.06);
+  --shadow-raised: 0 8px 28px oklch(0.21 0.015 160 / 0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  /* Fills the viewport, so the bottom nav never floats over a short page. */
+  min-height: 100dvh;
+}
+
+/* A single, consistent focus treatment. Focus must always be visible: this is
+   a financial product and keyboard users are not an afterthought. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

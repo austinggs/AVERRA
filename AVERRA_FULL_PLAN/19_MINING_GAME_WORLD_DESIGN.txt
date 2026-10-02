@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME WORLD DESIGN
+
+Document: 19_MINING_GAME_WORLD_DESIGN.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines the virtual mining world, zones, landmarks, traversal, and visual cohesion.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+WORLD STRUCTURE
+Hub/site area → mine zones → processing facilities → expansion regions → event spaces.
+
+DESIGN PRINCIPLES
+Clear navigation, meaningful upgrades, readable resource locations, mobile-friendly spatial scale, and consistent industrial/mineral visual language.
+
+DATA-DRIVEN ZONES
+Zone definition stores geometry/asset references, unlock requirements, resource tables, machine availability, mission links, and event modifiers.
+
+PROCEDURAL SUPPORT
+Procedural terrain/decorative generation may supplement open-source assets, while gameplay-relevant placements remain server-defined or data-versioned.
+
+PERFORMANCE
+Large worlds use streaming, occlusion/culling, LOD, instancing, pooled effects, and bounded active entities.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

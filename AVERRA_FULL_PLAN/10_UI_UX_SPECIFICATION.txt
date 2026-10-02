@@ -1,0 +1,38 @@
+AVERRA — UI/UX SPECIFICATION
+
+Document: 10_UI_UX_SPECIFICATION.txt
+Version: 1.1
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Provides UI behavior, component rules, states, accessibility, and responsive patterns.
+
+MANUAL MINIPAY DEPOSIT UI
+Required components:
+- Method selector: MiniPay Manual Crypto.
+- Network selector fixed to Celo for this method.
+- Token selector limited to server-provided allowlist: USDT, USDC, USDm, USAT.
+- Copyable destination address.
+- QR code using the same destination address.
+- Declared amount and request reference.
+- Warning banner: “Unsupported tokens or the wrong network will lead to loss of funds.”
+- “I’ve sent payment” button and transaction-hash form.
+- Status timeline from PENDING through CONFIRMED/NEEDS_REVIEW.
+
+FINANCIAL STATES
+Pending, Submitted, Verified, Confirmed, Needs Review, Processing, Completed, Failed, Reversed, Chargeback, Expired, and Rejected must have distinct visual/text treatment.
+
+SECURITY UX
+Never display an address or token as supported unless the server returned it from active configuration. Never imply that screenshot, Cash Link creation, or copied text proves settlement.
+
+REVIEWS & COMMUNITY UI
+Add a public Reviews experience with overall rating, review count, rating distribution, filters, review cards, Verified Experience indicators, and a threaded conversation beneath each review. Review creation supports 1–5 stars, text, optional category, and optional image attachments. Replies may also contain images.
+
+Required safety UX:
+- Publicly disclose that reviews and replies are visible to other users.
+- Provide Report controls.
+- Keep private support/payment evidence out of public review fields.
+- Clearly separate a Verified Experience indicator from an Averra endorsement.
+- Show upload progress/error states and server-enforced media limits.
+- Support loading, empty, hidden/removed, reported, and failed states.

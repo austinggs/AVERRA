@@ -1,0 +1,33 @@
+AVERRA — AVERRA — REWARD ENGINE
+
+Document: 35_REWARD_ENGINE.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Central authority for all financial reward creation, approval, availability, and reversal.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+PURPOSE
+The Reward Engine is the only domain allowed to transform verified earning events into financial reward obligations.
+
+INPUTS
+Provider callbacks, verified native tasks, verified survey/offer events, referral qualification events, game reward events, and approved promotional grants.
+
+PROCESSING
+Validate funding source → normalize amount → apply rule → check budget/caps → apply risk/hold policy → create immutable ledger entry → emit state event.
+
+STATES
+ELIGIBLE, PENDING, AVAILABLE, ON_HOLD, REVERSED, CHARGEBACK, CANCELLED, EXPIRED as required by the source.
+
+INVARIANTS
+No unbacked balance, no duplicate reward, no direct client credit, no silent history rewrite, and full provenance from reward to source event and budget.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

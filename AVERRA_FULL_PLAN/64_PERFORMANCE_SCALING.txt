@@ -1,0 +1,36 @@
+AVERRA — AVERRA — PERFORMANCE & SCALING
+
+Document: 64_PERFORMANCE_SCALING.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines performance budgets, capacity strategy, and scalability controls.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+WEB/API
+Set measurable latency/error targets by endpoint class; paginate large queries; cache read-heavy derived data; avoid N+1 queries.
+
+FINANCIAL
+Prefer strongly consistent transactional writes for ledger/payment state; async downstream jobs must be idempotent.
+
+PROVIDERS
+Queue provider polling/reconciliation and rate-limit outbound calls per provider contract.
+
+GAME
+Adaptive rendering, asset streaming, instancing, LOD, compressed textures, worker/off-main-thread processing where beneficial, and device-tier budgets.
+
+CAPACITY TESTING
+Load test normal, peak, burst, provider callback spikes, payout queue spikes, and game-event spikes.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+REVIEWS / MEDIA PERFORMANCE
+Paginate reviews/comments. Use derived aggregates or cached reads for public rating summaries when volume requires it. Resize/serve media derivatives rather than repeatedly serving originals. Keep image upload processing asynchronous where appropriate while preserving the review's authoritative publication status. Realtime is optional and must not be required to reconstruct state.

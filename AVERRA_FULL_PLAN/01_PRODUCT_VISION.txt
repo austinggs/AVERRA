@@ -1,0 +1,33 @@
+AVERRA — AVERRA — PRODUCT VISION
+
+Document: 01_PRODUCT_VISION.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines the long-term product intent, scope, users, value proposition, and strategic boundaries.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+VISION
+Build a trustworthy earning platform where users can discover multiple legitimate earning paths, track progress transparently, manage rewards safely, and participate in a durable native game economy without confusing entertainment with money.
+
+PRIMARY PRODUCT PILLARS
+Earn through providers, earn through native tasks, play the Mining Game, manage a transparent wallet, refer eligible users, and receive clear operational support.
+
+USER PROMISE
+Show users what they are doing, why a reward exists, what state it is in, what conditions apply, and how/when it can be withdrawn. Never present a hypothetical or unfunded reward as guaranteed cash.
+
+BUSINESS BOUNDARIES
+No fabricated activity, click fraud, self-completion for personal gain, fake conversions, crypto mining, unbacked balances, or hidden financial mutations.
+
+LONG-TERM EXTENSIBILITY
+Provider integrations, native task types, game content, advertiser campaigns, payout providers, and analytics modules must be replaceable or extensible without rewriting the financial core.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

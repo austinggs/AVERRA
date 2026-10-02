@@ -1,0 +1,43 @@
+AVERRA — NOTIFICATION SYSTEM
+
+Document: 45_NOTIFICATION_SYSTEM.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines centralized in-app, email, SMS/push where permitted, and admin notifications.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+EVENTS
+Reward pending/available/reversed, task completion, withdrawal changes, Daimo Hurry handling, session/address expiration, payment failure/completion, referrals, security, support updates, and admin alerts.
+
+CHANNELS
+In-app notifications are required and must work without any paid third-party notification API. Email/push/SMS are optional future channels according to user settings, legal basis, and operational need.
+
+SUPPORT NOTIFICATIONS
+Support notifications are factual database-backed events such as ticket created, assigned, replied to, status changed, or closed. They are not AI-generated support replies. The in-app ticket thread is the authoritative conversational record.
+
+DAIMO OPERATIONS
+Hurry request must trigger immediate operational notification to the responsible team. Session creation and impending expiration must be communicated to the user.
+
+RELIABILITY
+Notification delivery is not the source of truth. The underlying event/state remains authoritative and notifications are retryable/idempotent.
+
+PRIVACY
+Avoid sensitive data in insecure channels; messages use minimal necessary information.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+
+NO PAID NOTIFICATION DEPENDENCY
+The initial support implementation must not depend on Firebase, OneSignal, Twilio, paid email APIs, or another paid notification provider. Use Averra's own notification records and an in-app unread/badge experience. Future notification integrations remain replaceable enhancements.
+
+REVIEW NOTIFICATIONS
+When another user replies to a review or configured thread, Averra may create a factual in-app notification. It must identify the event without generating conversational AI text. The review thread remains the authoritative public conversation.

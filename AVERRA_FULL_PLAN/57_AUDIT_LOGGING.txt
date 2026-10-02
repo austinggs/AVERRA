@@ -1,0 +1,37 @@
+AVERRA — AVERRA — AUDIT LOGGING
+
+Document: 57_AUDIT_LOGGING.txt
+Version: 1.1
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines immutable operational and financial audit requirements.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+AUDIT RECORD
+actor, action, target/entity, timestamp, source/session context where appropriate, reason, reference/ticket, before/after summary, result, and correlation ID.
+
+HIGH-RISK EVENTS
+Reward creation/reversal, deposit creation/verification/admin confirmation/rejection, User Funding Balance credit/debit, manual financial adjustment, withdrawal approval/rejection, payout initiation/completion, destination change, provider changes, fraud decisions, KYC decisions where applicable, admin role changes, paid-perk/refund actions, and game admin corrections.
+
+DAIMO AUDIT
+Hurry request, operator handling, session creation, address/session expiration, payment detection, settlement, verification, admin confirmation, credit, manual review, and failure are all auditable. Cash Link creation/claim/settlement/reconciliation and admin deposit confirmation are also auditable.
+
+RETENTION
+Audit logs follow documented retention and access rules and are protected from unauthorized modification.
+
+OBSERVABILITY
+Correlation IDs connect user action, API request, async job, provider callback, ledger event, and payout operation.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+
+## V7 Admin Audit
+Admin actions must record operator identity, capability, target, reason, timestamp, result, and approval chain where applicable.

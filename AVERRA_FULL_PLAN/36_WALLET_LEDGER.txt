@@ -1,0 +1,58 @@
+AVERRA — WALLET LEDGER
+
+Document: 36_WALLET_LEDGER.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines authoritative financial accounting and balance derivation, including the separation of earned rewards from user-funded deposits.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+LEDGER PRINCIPLE
+Immutable append-only financial events are the source of truth. Derived balances may be cached but must be reproducible.
+
+FINANCIAL DOMAINS
+Averra maintains distinct accounting concepts:
+1. Earned Reward Balance — amounts owed to the user because eligible earning activity was verified.
+2. User Funding Balance — confirmed user-funded amounts available for approved platform purchases/services.
+3. Platform revenue/fees — including the 15% Platform Service & Maintenance Fee and paid-perk revenue.
+4. Payment clearing/reservation accounts and external settlement references as required.
+
+USER FUNDING DEPOSIT
+A confirmed MiniPay deposit creates a financial event specifically classified as USER_FUNDING_DEPOSIT. It MUST NOT use a reward-source classification and MUST NOT create earned-reward liability.
+
+DEPOSIT EVIDENCE
+A deposit record should retain the on-chain/payment evidence needed to reproduce the verification decision, including chain/network, token identifier, destination, sender, transaction hash, transfer event/log reference where applicable, verified amount, timestamps, request ID, and reviewer decision.
+
+BALANCE DERIVATION
+Earned Reward Balance and User Funding Balance MUST be separately derivable. A user may have both balances simultaneously. Spending User Funding Balance creates a funding debit; it does not reduce earned rewards and does not create earned rewards.
+
+FUNDING SPEND
+Game/platform purchases debit User Funding Balance through a server-authoritative financial command and create a corresponding entitlement/purchase event. The ledger retains the original funding source and purchase reference.
+
+TOKEN VALUATION
+The authoritative deposit event records the native token and exact on-chain quantity. If the platform exposes a normalized USD/NGN value or a common purchase unit, the valuation basis and timestamp MUST be stored with the conversion; the system MUST NOT rewrite the original on-chain quantity.
+
+SERVICE FEE
+A 15% Platform Service & Maintenance Fee on eligible withdrawals is recorded as a distinct fee event linked to the withdrawal. The fee is calculated from the gross withdrawal amount and does not alter the underlying earned-reward event history.
+
+ENTRIES
+Each entry includes account, amount, currency/unit, direction, source type, source ID, idempotency key, created/effective time, reference, and metadata. Financial events that derive from external crypto transfers additionally retain network, token contract/identifier, transaction hash, and transfer-event reference where available.
+
+DUPLICATES
+The same verified on-chain transfer event MUST NOT create more than one financial credit. Database uniqueness and transactional idempotency are required.
+
+REVERSALS
+Corrections are compensating entries linked to the original event; original records remain unchanged. A confirmed user-funded deposit cannot be silently removed by updating a balance field.
+
+WITHDRAWAL SEPARATION
+A withdrawal request reserves/commits earned reward funds through a distinct financial operation; approval is not payment completion. User Funding Balance is not treated as earned reward balance by default.
+
+IMPLEMENTATION NOTES
+The exact accounting unit used for platform purchases is configuration. Preserve the source asset and quantity even when a common purchase unit is displayed.
+
+RELATED DOCUMENTS
+See 37_WITHDRAWAL_SYSTEM.txt, 38_PAYMENT_OPERATIONS.txt, 48_DATABASE_SCHEMA.txt, 56_FINANCIAL_CONTROLS.txt, 70_ACCEPTANCE_CRITERIA.md, 71_ARCHITECTURAL_LAWS.md, and 84_USER_FUNDING_DEPOSIT_SYSTEM.md.

@@ -1,0 +1,24 @@
+AVERRA — BUSINESS MODEL
+
+Document: 03_BUSINESS_MODEL.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines how Averra creates value and how users, advertisers, providers, platform operations, and user-funded purchases interact.
+
+MARKETPLACE MODEL
+Advertisers/providers fund verified acquisition or research outcomes; Averra routes eligible opportunities to users and retains a configurable margin after provider/partner settlement and user reward obligations.
+
+REVENUE SOURCES
+Provider commissions, advertiser campaign margin, sponsored placements, permitted advertising inventory, platform-funded promotions, optional paid user perks, voluntary donations, and clearly disclosed platform service/maintenance fees. The baseline service/maintenance fee is 15% of the gross amount of an eligible user withdrawal.
+
+USER FUNDING MODEL
+Users may optionally fund approved platform purchases by depositing supported crypto to Averra's configured MiniPay destination. Deposits are confirmed through payment verification plus admin approval and credit to User Funding Balance. User funding is not an earning mechanism, investment, stake, or purchase of withdrawal eligibility.
+
+USER ECONOMICS
+Earned reward economics remain independent from user funding. Deposits, paid perks, and donations MUST NOT increase monetary reward rates or unlock withdrawal rights solely because the user paid.
+
+SUSTAINABILITY
+Reward liabilities must be backed by provider settlement, approved campaign budgets, or explicit platform-funded promotion budgets. User-funded balances and earned reward liabilities remain separately reported.

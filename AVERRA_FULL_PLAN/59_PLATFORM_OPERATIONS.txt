@@ -1,0 +1,51 @@
+AVERRA — AVERRA — PLATFORM OPERATIONS
+
+Document: 59_PLATFORM_OPERATIONS.txt
+Version: 1.1
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines day-to-day operational procedures, ownership, incidents, and runbooks.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+OPERATIONAL DOMAINS
+Provider operations, financial operations, payout operations, fraud, support, infrastructure, game operations, campaign operations, privacy/compliance.
+
+DAILY CONTROLS
+Provider callback health, settlement/reconciliation, deposit/funding queue, payout queues, Hurry queue, expired Daimo sessions, Cash Link exceptions, fraud backlog, error rates, support backlog, and critical infrastructure health.
+
+MANUAL PAYOUTS
+Operator verifies request/destination, performs transfer, records evidence, and marks status only after appropriate confirmation.
+
+DEPOSIT CONFIRMATION
+For MiniPay-funded deposits, operator verifies settlement evidence and confirms the deposit only after required payment verification succeeds. Confirmation credits User Funding Balance through the financial service and creates an audit trail.
+
+INCIDENTS
+Severity-based response, incident commander, communication, evidence preservation, recovery, and postmortem.
+
+CHANGE WINDOWS
+High-risk financial/provider changes require controlled deployment and rollback plans.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+
+SUPPORT OPERATIONS
+Support is human-operated only. The Support Center is the authoritative case-management system. @vipaverra is the official Telegram contact channel for human support. Operators should link Telegram conversations to an Averra ticket for traceability.
+
+Initial notification infrastructure must be cost-conscious: first-party in-app notifications are sufficient. Paid notification APIs are not a launch dependency.
+
+Support escalations involving deposits, withdrawals, fraud, disputes, or account changes must follow the corresponding privileged operational workflow; a support conversation cannot bypass those controls.
+
+REVIEWS / COMMUNITY OPERATIONS
+Define moderator coverage, report triage, escalation, abuse handling, media retention, and incident procedures for the review/community system. Public negative reviews are not automatically treated as incidents; only defined safety, fraud, legal, or operational triggers require escalation.
+
+
+## V7 Admin Operations
+The Admin Portal is the primary human operational console for deposits, withdrawals, support, moderation, providers, fraud, reconciliation, and system health.

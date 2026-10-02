@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Client bundle secret scan
+        run: npm run check:bundle
+      # Catches truncated or duplicated PL/pgSQL bodies without needing a database.
+      # Two such defects shipped in this repository before this gate existed.
+      - name: Migration structure check
+        run: npm run check:migrations
+      # Catches `.from('some_app_table')`, which cannot work: the `app` schema is
+      # not exposed through the Data API. Twelve such call sites shipped in this
+      # repository before this gate existed, including the provider callback
+      # evidence write, which meant no provider callback was ever recorded.
+      - name: Data API access check
+        run: npm run check:data-api
+      # Catches a function in `public` that never revokes EXECUTE from anon,
+      # `authenticated` and the PUBLIC pseudo-role. A function in the exposed
+      # schema is BORN executable by an unauthenticated caller, and 29 wrappers
+      # were reachable with the publishable key until migration 036 closed it.
+      # Verified live before this gate existed, which is how it was found.
+      - name: Function grant check
+        run: npm run check:grants
+
+  # Database tests (pgTAP) run only when a database is reachable.
+  # They are intentionally NOT a launch gate for migrations that have not yet
+  # been pushed. Enable by providing SUPABASE_DB_URL as a repository secret.
+  db-tests:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SUPABASE_DB_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Run database tests
+        run: supabase test db --db-url "${{ secrets.SUPABASE_DB_URL }}"

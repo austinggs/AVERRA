@@ -1,0 +1,39 @@
+AVERRA — AVERRA — PRIVACY & DATA PROTECTION
+
+Document: 54_PRIVACY_DATA_PROTECTION.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines privacy-by-design, data minimization, retention, rights, and third-party processing boundaries.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+MINIMIZATION
+Collect only data necessary for identity, service delivery, security/fraud, finance, support, lawful reporting, paid entitlements, or donations. MiniPay destination verification should retain only the minimum destination/evidence data needed to establish operational control. Do not collect a full KYC identity dataset when formal KYC is not part of the approved product model.
+
+PURPOSE MAPPING
+Each data category has documented purpose, legal basis/consent requirements where applicable, access policy, retention, and deletion/anonymization handling.
+
+THIRD PARTIES
+Provider, analytics, communications, KYC, and payment providers are catalogued with processing purpose and contract/compliance status.
+
+SENSITIVE DATA
+KYC and financial information receive restricted access and enhanced retention/security controls.
+
+USER RIGHTS
+Support lawful requests for access, correction, deletion/restriction/objection where applicable, while preserving records that must lawfully be retained.
+
+DAIMO
+Record only integration data required to create/track/verify a payment session and reconcile settlement; do not collect provider data beyond purpose.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+REVIEWS / COMMUNITY PRIVACY
+Reviews are public user-generated content. Provide a clear notice that text, rating, and selected media may be visible to other users. Do not disclose private financial/support evidence merely because it is associated with a review. Collect and retain only data needed for publication, moderation, security, support, and applicable legal obligations. Image metadata should be minimized where practical.

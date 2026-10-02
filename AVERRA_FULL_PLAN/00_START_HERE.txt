@@ -1,0 +1,144 @@
+AVERRA — AVERRA — START HERE
+
+Document: 00_START_HERE.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Master entry point and operating instructions for the complete Averra build specification.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+STATUS
+APPROVED PLANNING BASELINE
+
+PRODUCT DEFINITION
+Averra is a Nigerian earning and rewards platform that unifies legitimate third-party offers, surveys, tasks, advertising inventory, referrals, gamification, and a native Three.js Mining Game. The complete system is designed for production operation, not a reduced MVP.
+
+SOURCE-OF-TRUTH HIERARCHY
+1. Architectural Laws
+2. Approved System Specifications
+3. Database/API Contracts
+4. Acceptance Criteria
+5. Implementation Phases and Milestones
+6. Existing Code
+7. Tests
+8. Progress Notes
+9. AI Agent Assumptions
+
+NON-NEGOTIABLE LAWS
+Financial state is server-authoritative. Every financial mutation creates an immutable ledger event. Frontend state never authorizes money. Provider callbacks are authenticated, validated, and idempotent. Rewards require a traceable funding source or an explicitly configured Averra-funded budget. Reversals are compensating events. Manual payouts are operator-attributed. Automatic crypto payouts use replaceable provider adapters. Mining Game resources are virtual and are not cryptocurrency. The game server is authoritative. Analytics are never financial truth.
+
+PAYMENT MODES
+Withdrawals support MINIPAY_MANUAL, BANK_MANUAL, and CRYPTO_AUTOMATIC_DAIMO.
+Inbound user funding includes a detailed MANUAL_MINIPAY_CRYPTO flow on Celo with a planning allowlist of USDT, USDC, USDm, and USAT (see doc 84 section 1; only the server-configured active subset is accepted at runtime, and USDm/USAT remain inactive candidates until individually verified); native CELO and unsupported networks/tokens are not accepted. Manual MiniPay deposits require tx-hash submission, independent on-chain verification, and authorized admin confirmation before User Funding Balance credit. Manual modes are processed within 1–7 business days. Manual MiniPay withdrawals require a manually verified MiniPay destination. MiniPay payment operations may use a direct destination or transaction-specific Cash Link where supported. Daimo crypto deposit is a separate inbound flow and requires a user-submitted “Hurry” request before an operational deposit session is created; the design treats the session/address as having a one-hour validity window, subject to provider-side verification at implementation.
+
+USER FUNDING
+Averra maintains a separate User Funding Balance for confirmed user-funded deposits. MiniPay deposits require payment verification and authorized admin confirmation before credit. Confirmed deposits may fund supported Mining Game purchases, virtual goods, paid perks, and other platform purchases. Deposited funds are not automatically earned rewards or withdrawable reward liability.
+
+HOW AN AI AGENT CONTINUES WORK
+Read this file, then read ARCHITECTURAL_LAWS, SOURCE_INDEX, the relevant system specification, database/API contract, and acceptance criteria. Inspect existing code and tests before editing. Make the smallest coherent change. Do not bypass reward, ledger, fraud, payout, or authority boundaries. Run targeted tests, typecheck, lint, and build as applicable. Update progress notes.
+
+COMPLETION STANDARD
+A feature is not “done” because UI exists. It is done when the behavior is implemented end-to-end, authoritative state is correct, failure paths are handled, security controls exist, tests pass, observability exists, documentation is aligned, and acceptance criteria are satisfied.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+DOCUMENT INVENTORY
+00. 00_START_HERE.txt
+01. 01_PRODUCT_VISION.txt
+02. 02_PLATFORM_OVERVIEW.txt
+03. 03_BUSINESS_MODEL.txt
+04. 04_REVENUE_MODEL.txt
+05. 05_REWARD_ECONOMICS.txt
+06. 06_PROVIDER_ECOSYSTEM.txt
+07. 07_PROVIDER_ELIGIBILITY_MATRIX.txt
+08. 08_PROVIDER_INTEGRATION.txt
+09. 09_USER_EXPERIENCE.txt
+10. 10_UI_UX_SPECIFICATION.txt
+11. 11_AUTH_IDENTITY_KYC.txt
+12. 12_TASK_SYSTEM.txt
+13. 13_OFFERWALL_SYSTEM.txt
+14. 14_SURVEY_SYSTEM.txt
+15. 15_MINING_GAME_OVERVIEW.txt
+16. 16_MINING_GAME_GAMEPLAY.txt
+17. 17_MINING_GAME_THREEJS_ARCHITECTURE.txt
+18. 18_MINING_GAME_ASSET_PIPELINE.txt
+19. 19_MINING_GAME_WORLD_DESIGN.txt
+20. 20_MINING_GAME_MACHINES.txt
+21. 21_MINING_GAME_RESOURCES.txt
+22. 22_MINING_GAME_ENERGY.txt
+23. 23_MINING_GAME_INVENTORY.txt
+24. 24_MINING_GAME_UPGRADES.txt
+25. 25_MINING_GAME_MISSIONS.txt
+26. 26_MINING_GAME_EVENTS.txt
+27. 27_MINING_GAME_ACHIEVEMENTS.txt
+28. 28_MINING_GAME_LEADERBOARDS.txt
+29. 29_MINING_GAME_ECONOMY.txt
+30. 30_MINING_GAME_REWARDS.txt
+31. 31_MINING_GAME_SERVER_AUTHORITY.txt
+32. 32_MINING_GAME_ANTI_ABUSE.txt
+33. 33_MINING_GAME_ANALYTICS.txt
+34. 34_MINING_GAME_ADMIN_CONTROLS.txt
+35. 35_REWARD_ENGINE.txt
+36. 36_WALLET_LEDGER.txt
+37. 37_WITHDRAWAL_SYSTEM.txt
+38. 38_PAYMENT_OPERATIONS.txt
+39. 39_REFERRAL_SYSTEM.txt
+40. 40_FRAUD_ANTI_ABUSE.txt
+41. 41_ADVERTISING_SYSTEM.txt
+42. 42_ADVERTISER_PLATFORM.txt
+43. 43_ADMIN_PLATFORM.txt
+44. 44_SUPPORT_SYSTEM.txt
+45. 45_NOTIFICATION_SYSTEM.txt
+46. 46_ANALYTICS.txt
+47. 47_GAMIFICATION.txt
+48. 48_DATABASE_SCHEMA.txt
+49. 49_API_SPECIFICATION.txt
+50. 50_BACKEND_ARCHITECTURE.txt
+51. 51_FRONTEND_ARCHITECTURE.txt
+52. 52_GAME_BACKEND_ARCHITECTURE.txt
+53. 53_SECURITY_ARCHITECTURE.txt
+54. 54_PRIVACY_DATA_PROTECTION.txt
+55. 55_NIGERIA_COMPLIANCE.txt
+56. 56_FINANCIAL_CONTROLS.txt
+57. 57_AUDIT_LOGGING.txt
+58. 58_CONTENT_MODERATION.txt
+59. 59_PLATFORM_OPERATIONS.txt
+60. 60_INFRASTRUCTURE.txt
+61. 61_DEPLOYMENT.txt
+62. 62_MONITORING_OBSERVABILITY.txt
+63. 63_DISASTER_RECOVERY.txt
+64. 64_PERFORMANCE_SCALING.txt
+65. 65_TESTING_STRATEGY.md
+66. 66_GAME_TESTING.md
+67. 67_SECURITY_TESTING.md
+68. 68_FINANCIAL_TESTING.md
+69. 69_INTEGRATION_TESTING.md
+70. 70_ACCEPTANCE_CRITERIA.md
+71. 71_ARCHITECTURAL_LAWS.md
+72. 72_SYSTEM_DEPENDENCY_MAP.md
+73. 73_DATA_FLOW_MAP.md
+74. 74_FINANCIAL_FLOW_MAP.md
+75. 75_GAME_ECONOMY_FLOW.md
+76. 76_IMPLEMENTATION_PHASES.md
+77. 77_MILESTONES.md
+78. 78_AI_DEVELOPMENT_RULES.md
+79. 79_AGENTS.md
+80. 80_PROGRESS_TEMPLATE.md
+81. 81_CHANGE_MANAGEMENT.md
+82. 82_SOURCE_INDEX.md
+83. 83_MONETIZATION_PAID_PERKS.md
+84. 84_USER_FUNDING_DEPOSIT_SYSTEM.md
+85. 85_SUPPORT_AND_CONTACT_POLICY.md
+86. 86_REVIEWS_COMMUNITY_SYSTEM.md
+87. 87_ADMIN_PORTAL_EXPANDED.md
+
+REVIEWS & COMMUNITY
+Averra includes a public Reviews & Community Feedback System. Users can publish 1–5 star ratings, text, and optional images, with threaded public replies that may also contain images. The system is separate from private Support and financial records. Verified Experience indicators reflect underlying user activity but never imply Averra endorsement. AI-generated customer-support replies and AI-authored moderation decisions are not part of the production review/support path.

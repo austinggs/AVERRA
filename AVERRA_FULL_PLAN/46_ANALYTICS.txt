@@ -1,0 +1,36 @@
+AVERRA — AVERRA — ANALYTICS
+
+Document: 46_ANALYTICS.txt
+Version: 1.1
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines product, financial, advertising, provider, operational, and game analytics.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+DOMAINS
+Product funnel, earning activity, provider performance, financial/reconciliation, payouts, fraud, advertising, support, and Mining Game.
+
+SOURCE HIERARCHY
+Analytics consumes authoritative events; it never becomes the source of financial or gameplay truth.
+
+FINANCIAL DASHBOARDS
+Provider receivables, settled revenue, earned reward liability, User Funding Balance activity, withdrawals, payment completion, deposits awaiting confirmation, fee revenue, reserves, reconciliation variance.
+
+OPERATIONAL DASHBOARDS
+Provider uptime, callback failures, queue depth, payout aging, Hurry requests, expired Daimo sessions, support backlog, fraud review queue.
+
+PRIVACY
+Use aggregation/pseudonymization where possible and restrict access to sensitive analytics.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+REVIEWS / COMMUNITY ANALYTICS
+Track review volume, rating distribution, verified-review ratio, comment/reply volume, report rate, moderation queue age, media upload failure rate, and notification creation/delivery health. Analytics must not be used to fabricate ratings or suppress negative feedback and are not financial truth.

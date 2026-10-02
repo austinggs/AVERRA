@@ -1,0 +1,46 @@
+AVERRA — NIGERIA COMPLIANCE
+
+Document: 55_NIGERIA_COMPLIANCE.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Architecture-level compliance checklist for operating Averra in Nigeria. This is not legal advice.
+
+DATA PROTECTION
+Design around the Nigeria Data Protection Act/NDPC requirements, including lawful processing, minimization, security, retention, rights handling, processor management, and privacy notices.
+
+CONSUMER PROTECTION
+Fees, reward conditions, deposit rules, supported assets, withdrawal rules, service delays, error/recovery policies, and dispute handling must be clear and not misleading.
+
+USER-FUNDED CRYPTO DEPOSITS
+Averra must maintain explicit legal/commercial review for any model that receives, records, holds, controls, or applies user crypto to an internal funding balance. The legal structure must distinguish a platform purchase/funding arrangement from regulated deposit-taking, payment processing, custody, money transmission, virtual-asset services, or investment activity as applicable.
+
+REGULATORY REVIEW
+The Central Bank of Nigeria oversees the national payments system and maintains licensed Payment Service Provider categories. Current CBN materials emphasize licensing/oversight of payment-system participants.
+
+The SEC regulates applicable capital-market and virtual-asset activities; current SEC materials in 2026 describe VASP participants within its regulatory framework, including the Accelerated Regulatory Incubation Programme. Averra must obtain legal advice on whether any proposed crypto-receiving, custody, brokerage, exchange, or transfer activity falls within applicable SEC requirements.
+
+KYC/AML BOUNDARIES
+Formal KYC is not a baseline Averra feature. Manual MiniPay destination verification and admin confirmation of deposits are operational controls, not KYC. This does not prevent legally or provider-required identity, sanctions, AML/CFT, age, fraud, or source-of-funds checks where applicable.
+
+DEPOSIT / REFUND RULES
+Unsupported token/network transfers are review cases; blockchain recovery is not guaranteed. Do not promise refunds where technical or legal recovery is impossible. Document complaint handling and decision authority.
+
+NO INVESTMENT REPRESENTATION
+User-funded deposits must never be described as investments, stakes, savings products, guaranteed returns, passive-income purchases, or purchases of earning rights.
+
+FEE DISCLOSURE
+The 15% Platform Service & Maintenance Fee must be disclosed clearly before eligible withdrawal confirmation, with exact gross/fee/net amounts. It is platform service revenue and not a tax or investment return.
+
+EXTERNAL VERIFICATION
+Re-check current CBN, SEC, NDPC, provider, tax, and consumer-protection requirements before production launch and before materially expanding payment or crypto functionality.
+
+
+REFERENCE SOURCES
+CBN Payment Service Providers: https://www.cbn.gov.ng/PaymentsSystem/PSPs.html
+CBN Payments System Supervision: https://www.cbn.gov.ng/PaymentsSystem/
+CBN Payments System Vision 2028: https://www.cbn.gov.ng/PaymentsSystem/PSV2028.html
+SEC registered operator information: https://sec.gov.ng/for-investors/find-a-registered-operator/
+SEC VASP ARIP update (2026-08-13): https://home.sec.gov.ng/for-investors/sec-nigeria-clears-additional-vasps-for-accelerated-regulatory-incubation-programme/

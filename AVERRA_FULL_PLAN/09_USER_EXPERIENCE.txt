@@ -1,0 +1,21 @@
+AVERRA — USER EXPERIENCE
+
+Document: 09_USER_EXPERIENCE.txt
+Version: 1.1
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines end-to-end user journeys and user-facing state transparency.
+
+WALLET EXPERIENCE
+Wallet has separate Earned Reward Balance and User Funding Balance. Users can view funding/deposit history and earned-reward history distinctly.
+
+MANUAL MINIPAY CRYPTO DEPOSIT
+Crypto Deposit → choose MiniPay manual → review Celo + supported token instructions → view Averra MiniPay address + QR → send supported token → tap “I’ve sent payment” → submit tx hash → see verification → await admin confirmation → funding credited when CONFIRMED.
+
+MANDATORY WARNING
+The deposit screen must display: “Unsupported tokens or the wrong network will lead to loss of funds.” It must also tell users to double-check Celo and the token before sending.
+
+TRANSPARENCY
+“Sent”, “detected”, and “verified” are not equivalent to “credited”. Only the confirmed financial state should be presented as available User Funding Balance.

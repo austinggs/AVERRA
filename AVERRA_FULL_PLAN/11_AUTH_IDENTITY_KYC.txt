@@ -1,0 +1,39 @@
+AVERRA — AVERRA — AUTHENTICATION, IDENTITY & KYC
+
+Document: 11_AUTH_IDENTITY_KYC.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines authentication, identity, verification, session security, and KYC boundaries.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+IDENTITY
+Separate authentication identity from application profile and financial records.
+
+AUTHENTICATION
+Secure session tokens, refresh/revocation, device/session visibility, rate limiting, suspicious-login controls, and account recovery.
+
+KYC
+Formal KYC is NOT part of the baseline Averra product model. Do not build a general KYC workflow unless a future legal/commercial decision explicitly adds one. This does not remove security, fraud, age, sanctions, provider, or legally required checks that may apply to particular flows.
+
+MINIPAY ACCOUNT VERIFICATION
+MiniPay destination/account verification is a separate operational control, not KYC. A user who wants to use MiniPay for eligible withdrawals or other supported account-bound flows must submit a MiniPay destination for manual verification. Verification confirms that the destination is usable/controlled for the intended Averra account and records reviewer, evidence, status, timestamps, and audit trail. Do not describe this verification as identity verification or KYC.
+
+MINIPAY DEPOSIT CONFIRMATION
+MiniPay deposits into the Averra funding system require payment verification and authorized admin confirmation before the deposit is credited. For the manual crypto method, verification is based on Celo transaction evidence, active token allowlist, destination, exact transfer quantity, and duplicate checks. This is a payment-operation control, not KYC. A confirmed deposit may become User Funding Balance and be used for supported platform purchases; it does not become earned reward balance solely because it was received.
+
+AUTHORIZATION
+Use role-based and policy-based authorization. Financial and admin operations require server-side permission enforcement.
+
+PRIVACY
+Do not collect identity information merely because it could be useful later; collect it for a documented purpose with retention and access rules.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

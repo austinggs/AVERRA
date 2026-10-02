@@ -1,0 +1,33 @@
+AVERRA — AVERRA — REFERRAL SYSTEM
+
+Document: 39_REFERRAL_SYSTEM.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines referral attribution, qualification, rewards, caps, and abuse controls.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+ATTRIBUTION
+Referral code/link maps a new account to a referrer under explicit attribution rules.
+
+QUALIFICATION
+Referral reward requires configured qualifying behavior, such as verified activity or thresholded earnings, and cannot be triggered merely by account creation unless explicitly funded and allowed.
+
+ANTI-ABUSE
+Block obvious self-referral, device/account clusters, circular referral patterns, velocity anomalies, and repeated identities.
+
+REWARD HANDLING
+Referral rewards route through Reward Engine and may be pending/held/reversed.
+
+TRANSPARENCY
+Users can view referral status and why a reward is pending or rejected without seeing sensitive risk signals.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

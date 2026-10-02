@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME GAMEPLAY
+
+Document: 16_MINING_GAME_GAMEPLAY.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines moment-to-moment mechanics and progression.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+CORE LOOP
+Assign/operate machines, manage energy, collect resources, process outputs, sell/use in virtual economy, upgrade, and unlock new areas.
+
+INTERACTION RULES
+Client requests actions; server validates current state, cooldowns, resource ownership, requirements, and action eligibility before committing.
+
+PROGRESSION
+XP, levels, unlock trees, missions, achievements, and expansion milestones are separate but composable systems.
+
+FAILURE STATES
+Insufficient energy/resources, cooldown, locked area, server rejection, stale client state, and suspicious automation must be handled explicitly.
+
+REWARDS
+Game rewards may be non-financial or financial; financial outcomes always pass through the central reward pipeline.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

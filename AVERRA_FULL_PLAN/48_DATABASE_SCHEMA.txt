@@ -1,0 +1,116 @@
+AVERRA — DATABASE SCHEMA
+
+Document: 48_DATABASE_SCHEMA.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Logical production database domain model, including user funding deposits and MiniPay manual crypto verification.
+
+DOMAINS
+Identity: users, profiles, sessions, minipay_destination_verifications.
+Earning: task_definitions, attempts, completions, verifications, events.
+Finance: wallets, ledger_entries, reward_sources, user_funding_accounts, user_funding_balances, deposit_requests, deposit_events, deposit_verifications, payout_destinations, withdrawal_requests, payment_operations, cash_link_operations, reconciliation_records, fee_records, paid_perk_orders, paid_entitlements, donations.
+Provider: providers, provider_accounts, offers, surveys, conversions, callbacks, settlements.
+Operations: admin_actions, evidence_records, review_cases, notifications.
+
+USER FUNDING TABLES
+user_funding_accounts:
+- id
+- user_id
+- status
+- created_at
+- updated_at
+
+user_funding_balances:
+- account_id
+- available_amount / unit as configured
+- reserved_amount where applicable
+- last_derived_at
+
+The authoritative source remains ledger_entries.
+
+DEPOSIT REQUEST
+Fields should include:
+- id
+- user_id
+- method
+- status
+- request_reference
+- declared_asset
+- declared_token_contract
+- declared_amount
+- declared_unit
+- destination_address
+- sender_address when supplied
+- requested_at
+- expires_at
+- submitted_at
+- tx_hash
+- chain_id/network
+- token_contract
+- token_decimals
+- transfer_log_index/event reference where available
+- verified_amount
+- verified_at
+- verification_status
+- admin_confirmed_at
+- admin_confirmed_by
+- rejection_reason / review_reason
+- funding_ledger_entry_id
+- audit references
+
+TOKEN CONFIGURATION
+Supported deposit assets must be stored in configuration with token symbol, chain/network, chain ID, contract address, decimals, active flag, verification timestamp, and source/provider notes. This is required for the four-token allowlist: USDT, USDC, USDm, USAT on Celo. Native CELO is excluded.
+
+DEPOSIT EVENTS
+Store immutable operational events such as CREATED, SUBMITTED, DETECTED, VERIFIED, NEEDS_REVIEW, CONFIRMED, REJECTED, EXPIRED, and CANCELLED with actor/source, timestamp, payload hash/reference, and audit linkage.
+
+UNIQUENESS / DUPLICATE PROTECTION
+Enforce uniqueness for a verified transfer event using the applicable chain/network + token contract + tx hash + transfer log/event reference. Also enforce idempotency for user submission and provider callbacks.
+
+CASH LINK
+cash_link_operations track payer, receiver/claim context, amount, asset, network, link/provider reference, created_at, expires_at where applicable, settlement reference, settlement status, and reconciliation status. A Cash Link record is never a ledger-credit command by itself.
+
+MINIPAY VERIFICATION
+minipay_destination_verifications track manual payout destination verification separately from deposit confirmation and formal KYC.
+
+LEDGER
+ledger_entries are immutable and reference the source domain event. Deposit credits use USER_FUNDING_DEPOSIT source type. Funding spends use USER_FUNDING_SPEND source type. Withdrawal service fees use PLATFORM_SERVICE_MAINTENANCE_FEE source type.
+
+INTEGRITY
+Foreign keys, unique constraints, enum/state validation, amount precision, transaction boundaries, and idempotency are mandatory for financial state changes.
+
+REVIEWS / COMMUNITY TABLES
+Add logical tables: reviews, review_media, review_comments, review_comment_media, review_reports, and review_moderation_actions. Public visibility is driven by publication/moderation status, not by client assumptions. Review/media ownership and moderator permissions require explicit RLS policies.
+
+SUPABASE DATABASE / STORAGE RULE
+Supabase PostgreSQL is the authoritative review/community store and Supabase Storage is the intended media layer. Exposed public-schema tables must have deliberate grants plus RLS; newly created tables must not assume automatic Data API exposure. Private moderation evidence requires restricted storage access.
+
+
+## V7 Admin Expansion
+Add role/permission, admin session/action, dual-approval, support operations, review moderation, automation-run, deposit-review, and reconciliation entities required by `87_ADMIN_PORTAL_EXPANDED.md`. Financial balances remain separated into earned rewards and user funding.
+
+
+WITHDRAWAL STATE FIELDS (CANONICAL)
+withdrawal_requests carries three orthogonal fields; they must not be collapsed
+into one enum:
+- withdrawal_status: REQUESTED, ELIGIBILITY_CHECKED, RISK_REVIEW, APPROVED,
+  PROCESSING, PAYMENT_INITIATED, CONFIRMED, COMPLETED, FAILED, REJECTED,
+  CANCELLED, EXPIRED
+- payment_settlement_status: NOT_STARTED, INITIATED, SETTLEMENT_PENDING,
+  SETTLED, SETTLEMENT_FAILED, REVERSED
+- reconciliation_status: PENDING, MATCHED, VARIANCE, RESOLVED
+
+DEPOSIT TOKEN TIER TABLES
+deposit_token_candidates: the planning tier (symbol, network, notes, status).
+deposit_token_configs: the production tier, one row per accepted token, holding
+chain_id, symbol, contract_address, decimals, is_active, verified_at and
+verification_source. Only rows with is_active = true AND a verified
+contract_address may be returned to the client or accepted by the verifier.
+
+DOMAIN ENUM NAMESPACING
+Enums are namespaced per domain. ELIGIBILITY_CHECKED appears in both the reward
+lifecycle (doc 05) and the withdrawal lifecycle (doc 37). They are separate types
+(reward_state vs withdrawal_status) and must never be replaced by one shared enum.

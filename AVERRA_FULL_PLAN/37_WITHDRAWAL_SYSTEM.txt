@@ -1,0 +1,58 @@
+AVERRA — WITHDRAWAL SYSTEM
+
+Document: 37_WITHDRAWAL_SYSTEM.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines user withdrawal eligibility, request lifecycle, destinations, service-fee disclosure, and separation from user-funded deposits.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+METHODS
+MINIPAY_MANUAL, BANK_MANUAL, CRYPTO_AUTOMATIC_DAIMO.
+
+FEE
+Eligible withdrawals carry a baseline 15% Platform Service & Maintenance Fee. Before confirmation, the UI MUST show gross amount, fee amount, and net payout. The fee is separate from the reward amount and is not applied to ordinary deposits.
+
+FLOW
+Available earned balance → minimum/limits → configured eligibility/security checks → fraud/risk → reserve reward amount → calculate 15% fee → disclose gross/fee/net → confirm verified destination/payment method → create withdrawal request → payment operation → settlement confirmation → release/complete or fail/refund reservation.
+
+BALANCE BOUNDARY
+Only eligible earned reward balance enters the ordinary withdrawal flow. User Funding Balance is separate and is not withdrawable by default merely because it exists.
+
+STATES
+Withdrawal state is modelled as THREE orthogonal fields. Payment execution and
+accounting reconciliation are different lifecycles and must not share one enum.
+
+1. withdrawal_status (user-visible workflow)
+   REQUESTED, ELIGIBILITY_CHECKED, RISK_REVIEW, APPROVED, PROCESSING,
+   PAYMENT_INITIATED, CONFIRMED, COMPLETED,
+   plus terminal states FAILED, REJECTED, CANCELLED, EXPIRED.
+
+2. payment_settlement_status (the payment operation itself)
+   NOT_STARTED, INITIATED, SETTLEMENT_PENDING, SETTLED, SETTLEMENT_FAILED, REVERSED.
+   Carries the SETTLEMENT concept previously stated only in doc 87.
+
+3. reconciliation_status (accounting reconciliation)
+   PENDING, MATCHED, VARIANCE, RESOLVED.
+   Carries the RECONCILED concept previously stated only in doc 87.
+
+APPROVED never means PAID. CONFIRMED never means RECONCILED.
+
+MINIPAY VERIFICATION
+A MiniPay payout destination MUST be manually verified before it can be used for account-bound manual MiniPay withdrawals. This is operational destination verification, not formal KYC.
+
+CASH LINK
+Cash Link is transaction-specific. Where supported for a payout, Averra/operator creates the link, the receiving user uses/claims it, and the payment is not completed until settlement is verified and reconciled.
+
+DAIMO DISTINCTION
+Automatic Daimo withdrawals are separate from Daimo deposit/Hurry flows and never silently fall back to manual payout methods.
+
+IMPLEMENTATION NOTES
+Exact provider routes, destination formats, and Cash Link mechanics remain adapter-level details.
+
+RELATED DOCUMENTS
+See 38_PAYMENT_OPERATIONS.txt, 56_FINANCIAL_CONTROLS.txt, 84_USER_FUNDING_DEPOSIT_SYSTEM.md, and 71_ARCHITECTURAL_LAWS.md.

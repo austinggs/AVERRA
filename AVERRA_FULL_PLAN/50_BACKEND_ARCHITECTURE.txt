@@ -1,0 +1,47 @@
+AVERRA — BACKEND ARCHITECTURE
+
+Document: 50_BACKEND_ARCHITECTURE.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines backend modules, service boundaries, jobs, and transactional rules.
+
+MODULES
+Identity, earning, provider, reward, wallet, funding/deposit, withdrawal, payment, fraud, referral, advertising, game, operations, support, notifications, analytics.
+
+FUNDING SERVICE
+Owns deposit requests, matching, on-chain verification orchestration, admin confirmation commands, funding-balance credits, funding-balance spends, and reconciliation. It is the only service allowed to create USER_FUNDING_DEPOSIT and USER_FUNDING_SPEND financial events.
+
+CHAIN VERIFICATION
+The verifier checks Celo chain identity, allowlisted token contract, destination, transaction success, token transfer event, exact quantity, confirmations, expiry/request context, and duplicate status. It should use a trusted RPC/indexer/provider source and preserve enough evidence for audit.
+
+ASYNC JOBS
+Provider reconciliation, chain/payment verification, payout status polling, notifications, analytics, fraud scoring, expired-session/request processing, funding reconciliation, and scheduled campaigns.
+
+ADMIN CONFIRMATION
+Verification and admin confirmation are separate commands. A verified deposit becomes creditable only after the required approval service command succeeds.
+
+RESILIENCE
+Retries are bounded/idempotent; external calls happen outside critical DB transactions where possible; durable outbox/event patterns prevent lost financial events.
+
+
+SUPPORT SERVICE
+The support domain owns ticket creation, assignment, messages, attachments, escalation, SLA tracking, notification events, and audit logging.
+
+HUMAN-ONLY RULE
+Support-message creation from operator accounts is a human-support action. AI services MUST NOT be connected to the production support reply path. Development-time AI tooling remains outside the customer-support runtime.
+
+NOTIFICATION IMPLEMENTATION
+The first implementation uses first-party database-backed in-app notifications. Notification delivery is not the source of truth; support tickets remain authoritative.
+
+REVIEWS / COMMUNITY SERVICE
+The backend owns review creation/editing/deletion, thread/comment operations, verified-experience association, media metadata, reporting, moderation commands, and review notifications. Public reads are safe projections; privileged moderation and verification logic remain server-side.
+
+AUTOMATIONS
+Supabase-backed jobs may create notifications, calculate rating aggregates, expire report queues, or process deterministic media validation. No automation may impersonate customer support or make financial decisions.
+
+
+## V7 Backend
+Sensitive Admin Portal actions run through trusted server-side application logic or Supabase Edge Functions. Browser state is advisory only.

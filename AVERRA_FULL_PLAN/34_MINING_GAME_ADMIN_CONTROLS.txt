@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME ADMIN CONTROLS
+
+Document: 34_MINING_GAME_ADMIN_CONTROLS.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines privileged game-management operations and safeguards.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+CONTROLS
+Content enable/disable, event management, balance configuration, asset activation, leaderboard moderation, player investigation, and approved corrections.
+
+SEGREGATION
+Game admin privileges are distinct from financial payout privileges where practical.
+
+AUDIT
+Every privileged action records actor, reason, timestamp, target, before/after, source IP/session context where permitted, and ticket/reference.
+
+SAFE OPERATIONS
+Destructive actions are avoided; corrections should be compensating or reversible when technically possible.
+
+EMERGENCY
+Global or subsystem kill switches may disable reward claims or game actions without deleting history.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

@@ -1,0 +1,42 @@
+AVERRA — AVERRA — INFRASTRUCTURE
+
+Document: 60_INFRASTRUCTURE.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines deployment environments and core infrastructure services.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+ENVIRONMENTS
+Local/development, test, staging, production; production secrets and data are isolated.
+
+CORE SERVICES
+Web application, API/backend, database, object storage, cache/queue as needed, observability, email/notification delivery, and provider integration workers.
+
+SCALING
+Stateless application instances where possible; background jobs horizontally scalable with idempotent processing.
+
+GAME INFRASTRUCTURE
+Static asset delivery/CDN, optimized GLB/GLTF delivery, API/WebSocket capacity, session/state stores, and telemetry.
+
+SECURITY
+Network segmentation, least-privilege service accounts, secret management, encrypted storage/transport, backups, and patch management.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+SUPABASE + VERCEL BASELINE
+Supabase is the planned backend platform: PostgreSQL for authoritative application data, Auth for user sessions, Storage for controlled media, Realtime where justified, and Edge Functions/server-side jobs for controlled integrations/automations. Vercel is the planned production hosting/deployment platform for the Averra web application.
+
+The architecture remains replaceable at boundaries, but the implementation plan should optimize for Supabase + Vercel first rather than introducing a second backend platform without approved change control.
+
+
+## V7 Infrastructure
+Supabase is the authoritative backend platform and Vercel is the planned web deployment target. Custom automations may run through Supabase Edge Functions and scheduled mechanisms.

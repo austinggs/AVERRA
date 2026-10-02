@@ -1,0 +1,101 @@
+AVERRA — API SPECIFICATION
+
+Document: 49_API_SPECIFICATION.txt
+Version: 1.2
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines API conventions and endpoint families, including detailed MiniPay manual crypto deposit operations.
+
+CONVENTIONS
+Versioned APIs, authenticated user context, RBAC, consistent error schema, pagination, idempotency for mutations, request correlation IDs, and server timestamps.
+
+USER APIS
+Auth/session, profile, earn, offers/surveys, wallet, User Funding Balance, referrals, game, notifications, support.
+
+FUNDING / DEPOSIT APIS
+Illustrative contracts:
+POST /deposits/minipay/manual
+GET /deposits/:id
+POST /deposits/:id/submit-tx
+POST /deposits/:id/cancel where allowed
+POST /deposits/:id/confirm-payment-intent or equivalent acknowledgement endpoint
+POST /deposits/:id/hurry for Daimo flow
+POST /deposits/:id/cash-link where applicable
+
+The client may submit evidence and a transaction hash but MUST NOT mark the deposit VERIFIED or CONFIRMED.
+
+MINIPAY MANUAL CRYPTO DEPOSIT
+Create request returns the currently active Averra destination address, QR data, supported asset allowlist, Celo network identifier, request reference, expiry timestamp, and user instructions. Exact token contract addresses are configuration and must be returned by the server rather than hard-coded in the client.
+
+SUBMIT TRANSACTION
+The user may submit tx hash and optional screenshot. The server validates syntax and associates the submission with the deposit request. It does not trust screenshot or client-declared success.
+
+SERVER VERIFICATION
+Verification service checks chain/network, token contract, destination address, sender address if relevant, transfer event, exact amount, transaction success, required confirmations, request/expiry window, duplicate status, and allowlist status.
+
+ADMIN APIS
+GET /admin/deposits
+GET /admin/deposits/:id
+POST /admin/deposits/:id/confirm
+POST /admin/deposits/:id/reject
+POST /admin/deposits/:id/needs-review
+GET /admin/payment-operations/:id
+
+Confirmation endpoint must require explicit permission, reason where configured, and idempotent server-side transaction handling. Large deposits require the configured second approver.
+
+WITHDRAWAL APIS
+Rewards/internal balance reads, withdrawal creation/cancel where allowed, payout destination management, MiniPay destination verification submission/status, Cash Link payment operation status, paid-perk purchase/entitlement status, donation status, and withdrawal history.
+
+CASH LINK APIS
+Support transaction-specific creation/status and settlement verification where approved provider integration exposes the capability. Never expose provider secrets or accept a client assertion as settlement.
+
+ERROR MODEL
+Return explicit errors for unsupported token, wrong network, expired request, duplicate tx, underpayment, overpayment, needs-review, and unverified settlement. Do not expose sensitive internal evidence.
+
+WEBHOOK / CHAIN INDEXER SECURITY
+Use authenticated provider callbacks where applicable plus independently verified on-chain state. Store raw evidence/response hashes as required for audit, apply replay protection, and make processing idempotent.
+
+
+SUPPORT APIS
+Illustrative contracts:
+POST /support/tickets
+GET /support/tickets
+GET /support/tickets/:id
+POST /support/tickets/:id/messages
+POST /support/tickets/:id/attachments
+POST /support/tickets/:id/close where allowed
+POST /support/tickets/:id/reopen where allowed
+GET /notifications
+POST /notifications/:id/read
+
+Support messages written by support agents MUST be human-authored. The API must not expose an endpoint intended to submit AI-generated customer-support replies. Automated notifications are separate event records and must be visibly distinguishable from human support messages.
+
+TELEGRAM BRIDGE
+There is no requirement for a Telegram bot or paid Telegram automation in the initial release. Human operators may receive requests through @vipaverra and then link the matter to an Averra ticket. Financial actions must still occur through authenticated Averra workflows.
+
+REVIEWS / COMMUNITY APIS
+Illustrative endpoints:
+GET /reviews
+POST /reviews
+GET /reviews/:id
+PATCH /reviews/:id
+DELETE /reviews/:id
+POST /reviews/:id/comments
+PATCH /reviews/comments/:id
+DELETE /reviews/comments/:id
+POST /reviews/:id/media
+POST /reviews/comments/:id/media
+POST /reviews/:id/report
+POST /reviews/comments/:id/report
+POST /reviews/media/:id/report
+GET /admin/reviews
+GET /admin/review-reports
+POST /admin/reviews/:id/moderate
+
+All mutations require server-side authorization. Public GET operations return only published fields. Media upload endpoints validate ownership, file limits, content type, and moderation state.
+
+
+## V7 Admin Expansion
+Admin endpoints must enforce server-side capability checks, audit sensitive actions, and expose separate prepare/approve/settle/reconcile operations for financial workflows. Never authorize from client-provided role fields.

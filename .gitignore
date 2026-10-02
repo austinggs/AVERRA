@@ -1,0 +1,25 @@
+# --- secrets: never commit ---
+supabase.md
+.env
+.env.*
+!.env.example
+
+# --- deps / build ---
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- tooling / os ---
+.vercel
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# --- supabase local ---
+supabase/.temp/
+supabase/.branches/

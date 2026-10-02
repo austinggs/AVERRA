@@ -1,0 +1,56 @@
+AVERRA — SUPPORT SYSTEM
+
+Document: 44_SUPPORT_SYSTEM.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines ticketing, evidence, resolution, escalation, financial-support traceability, human-only customer support, and the official Averra contact channels.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+TICKET MODEL
+Ticket ID, user, category, priority, status, assignee, timestamps, messages, attachments/evidence, linked entities, and resolution.
+
+LINKED ENTITIES
+Task, provider event, survey, offer, referral, game event, reward, ledger entry, withdrawal, payment operation, and transaction reference.
+
+FINANCIAL SUPPORT
+Support agents can view required context but must not directly mutate financial balances unless they hold explicit privileged permissions.
+
+ESCALATION
+Escalate fraud, KYC, payout, provider, and compliance cases to authorized teams.
+
+SLA
+Support priorities and response targets are configured operationally and are separate from payout processing windows.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.
+
+
+HUMAN-ONLY CUSTOMER SUPPORT POLICY
+Averra customer support is 100% human-operated. AI-generated customer-support replies are prohibited.
+
+- Support agents MUST be authorized human personnel.
+- Averra MUST NOT automatically generate, send, or impersonate support-agent replies using AI.
+- Chatbots or conversational AI are not part of the customer-support system.
+- Automated system notifications are permitted only for factual state messages such as ticket creation, assignment, status changes, payment status, and closure. Such notifications must not be represented as human-written support replies.
+- Financial, payment, fraud, account, and dispute decisions remain under authorized human control.
+- Support-agent replies and material actions MUST be audit logged.
+
+OFFICIAL CONTACT CHANNELS
+- In-app Support Center / ticketing: primary and authoritative support channel.
+- Telegram: @vipaverra, official human-operated contact channel.
+- Help Center / FAQ: self-service information channel.
+- Support email: not configured yet; do not invent or publish an address.
+
+CHANNEL BOUNDARY
+Telegram can receive support requests and payment references, but it does not replace Averra's authenticated ticket and financial records. Support operators must link or create an in-app ticket where a case affects an account, payment, withdrawal, deposit, fraud review, or dispute. Telegram alone MUST NOT authorize a balance mutation, deposit credit, withdrawal approval, refund, or policy exception.
+
+REVIEWS BOUNDARY
+Public review/chat content is not a substitute for support. Support agents may link a review to a private support ticket when a user needs account-specific assistance. Support remains 100% human-operated, while review/community content remains subject to the separate moderation system.

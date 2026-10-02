@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME SERVER AUTHORITY
+
+Document: 31_MINING_GAME_SERVER_AUTHORITY.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines the authoritative boundary for gameplay state.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+AUTHORITATIVE FIELDS
+Player progression, energy, inventory, machines, resources, mission progress, achievements, event participation, leaderboard inputs, and reward eligibility.
+
+CLIENT RESPONSIBILITIES
+Rendering, input collection, animation, interpolation, cached display, and non-authoritative prediction where safe.
+
+REQUEST VALIDATION
+Authenticate user, validate action ID/idempotency, load current state, check prerequisites, apply atomic transition, emit event, return authoritative state/version.
+
+CONCURRENCY
+Use optimistic versioning or transactional locking to prevent double-spend/duplicate-claim races.
+
+OBSERVABILITY
+Authoritative action events must be traceable for support, anti-abuse, and debugging.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

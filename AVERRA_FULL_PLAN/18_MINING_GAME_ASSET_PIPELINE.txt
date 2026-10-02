@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME ASSET PIPELINE
+
+Document: 18_MINING_GAME_ASSET_PIPELINE.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines the approved open-source-first asset sourcing, licensing, optimization, and registry workflow.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+ASSET POLICY
+Open-source/permissively licensed assets are the default. Free-to-download does not mean license-compatible.
+
+REGISTRY FIELDS
+Asset ID, name, type, source URL, license, commercial-use permission, modification permission, redistribution permission, attribution requirement/text, creator, source date, approval status, version, file references, restrictions.
+
+PIPELINE
+Concept → specification → discover/create → license verification → optimization → Blender/3D processing → GLB/GLTF export → compression → registry → integration → performance testing.
+
+AI RULE
+An AI agent must never pull a random public model into production. License and provenance must be recorded before integration.
+
+QUALITY
+Assets must meet geometry, texture, scale, naming, pivot/origin, material, collision, LOD, performance, and visual consistency requirements.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

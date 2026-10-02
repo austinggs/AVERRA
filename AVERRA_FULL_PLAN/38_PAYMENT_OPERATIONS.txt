@@ -1,0 +1,110 @@
+AVERRA — PAYMENT & PAYOUT OPERATIONS
+
+Document: 38_PAYMENT_OPERATIONS.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines inbound user funding deposits, manual MiniPay/bank payouts, automatic crypto payouts, Cash Link operations, reconciliation, and privileged payment controls.
+
+PAYMENT ARCHITECTURE
+The internal ledger is authoritative. External payment/crypto systems provide settlement evidence; they do not replace Averra accounting.
+
+METHODS
+INBOUND USER FUNDING:
+- MANUAL_MINIPAY_CRYPTO
+- DAIMO_CRYPTO_DEPOSIT
+- MINIPAY_CASH_LINK where supported as a separately approved flow
+
+OUTBOUND:
+- MINIPAY_MANUAL
+- BANK_MANUAL
+- CRYPTO_AUTOMATIC_DAIMO
+
+MANUAL MINIPAY CRYPTO DEPOSIT
+Network: Celo only.
+Supported token allowlist at planning baseline: USDT, USDC, USDm, USAT.
+Native CELO and all other tokens/networks are unsupported for Averra deposits.
+
+WARNING
+The deposit UI MUST display a prominent warning: “Unsupported tokens or the wrong network will lead to loss of funds.” The UI MUST also tell the user to double-check Celo and the selected supported token before sending.
+
+MANUAL MINIPAY DEPOSIT FLOW
+1. User selects MiniPay Deposit — Crypto.
+2. UI shows the Averra MiniPay destination address, copy control, share control where supported, and QR code.
+3. UI presents the supported token list and the Celo-only network requirement.
+4. Server creates a deposit_request in PENDING state with a unique Averra request ID/reference, declared asset, declared amount, and timestamps.
+5. User sends the selected token to the displayed destination.
+6. User submits “I’ve sent payment”, including transaction hash; screenshot is optional evidence only.
+7. Server independently verifies Celo settlement, exact token/contract, destination, transfer amount, transaction status, and required confirmations.
+8. Authorized admin reviews the verified evidence and confirms or rejects.
+9. On confirmation, the financial service posts a ledger credit to User Funding Balance.
+
+DIRECT-ADDRESS MATCHING
+Because the destination address may be shared across users, matching uses a combination of:
+- unique deposit request ID/reference;
+- user's registered/supplied sender address where available;
+- exact destination address;
+- supported token/contract;
+- exact on-chain transfer quantity;
+- transaction hash and transfer-event/log reference;
+- declared amount and request time window.
+The off-chain reference does not need to be embedded on-chain. Exact amount is a matching signal, not sole proof of ownership. Transaction/event identity is the final duplicate key.
+
+TOKEN ALLOWLIST
+Supported assets must be stored in configuration with chain ID/network, token symbol, token contract address, decimals, active/inactive status, and verification date. The backend rejects non-allowlisted assets before credit.
+
+DUPLICATE PROTECTION
+The same on-chain transfer event MUST NOT be credited twice. Uniqueness should be enforced using chain/network + token contract + transaction hash + transfer-event/log reference where available. A transaction hash alone is not always sufficient when a transaction contains multiple token transfer events.
+
+DEPOSIT STATES
+PENDING → SUBMITTED → VERIFIED → CONFIRMED.
+Other terminal/review states: REJECTED, EXPIRED, NEEDS_REVIEW, CANCELLED.
+Only CONFIRMED is creditable.
+
+WRONG TOKEN / WRONG NETWORK / LATE PAYMENT
+Any unsupported token, unsupported network, malformed transfer, unknown destination, late payment for an expired request, or otherwise ambiguous transfer enters NEEDS_REVIEW and receives no automatic credit.
+Refund/recovery policy: attempt recovery only where technically possible, operationally safe, and permitted. Recovery is not guaranteed for an unsupported token/network. If recovery is possible, return funds only to the verified originating address or another explicitly approved destination after review, with network costs handled according to the published policy. Never promise that an irreversible blockchain transfer can always be recovered.
+
+UNDERPAYMENT / OVERPAYMENT
+Exact amount matching is preferred. Underpayment: NEEDS_REVIEW; do not automatically credit the declared amount. Overpayment: NEEDS_REVIEW; the verified excess must not become reward balance. Admin may, under policy, either credit the verified excess to User Funding Balance or process a return of the excess to the originating address, with the decision and valuation basis audited.
+
+VALUATION / NGN DISPLAY
+The blockchain amount is authoritative. Do not depend on a later market rate to determine whether a transfer occurred. If Averra displays NGN equivalents, use a recorded valuation snapshot with source, timestamp, and rate. The original token amount remains authoritative. Any depeg/valuation exception is a review case.
+
+EXPIRY
+Manual MiniPay deposit requests have a configurable operational expiry; recommended baseline is 24 hours from request creation. Expiry means the request is no longer eligible for automatic matching/credit. Funds arriving later remain reviewable and are never silently discarded.
+
+LIMITS
+Initial configurable launch defaults: minimum 5 USD-equivalent per deposit, maximum 500 USD-equivalent per deposit, and 2,000 USD-equivalent aggregate user funding per rolling 24 hours. These are operational defaults, not permanent policy, and must be revisited after legal, fraud, liquidity, and provider review.
+
+ADMIN SLA
+Target review SLA: within 15 minutes during staffed payment-operations hours; otherwise within 1 business day. User-facing copy should describe this as a target, not a guaranteed on-chain settlement time.
+
+ADMIN PERMISSIONS
+Authorization uses capability codes, not free-text role labels. Verification/preparation requires deposit.verify; confirmation/rejection requires deposit.approve; reconciliation requires deposit.reconcile. See the CANONICAL CAPABILITY MATRIX in doc 43. Ensure the capability sets are held by different people. For high-value deposits above a configured threshold, require two-person approval, enforced server-side and by database constraint. A user who created or requested a payment operation must not approve their own exception.
+
+EVIDENCE RETENTION
+Retain transaction references, verification result, admin action, audit trail, and necessary evidence for the period required by applicable law/provider obligations; configure an initial seven-year retention target only after legal/accounting review confirms suitability.
+
+DAIMO DEPOSIT — HURRY
+User selects Daimo crypto deposit → enters desired amount → submits “Hurry” → operations request → session/address generated → one-hour design countdown → payment → detection → verification → admin confirmation → funding credit. The one-hour window is a product planning rule subject to current provider verification.
+
+CASH LINK
+Cash Link is a transaction-specific MiniPay payment instrument/reference. The party paying creates the link and the receiver uses/claims it. A created/opened/claimed link does not itself prove final settlement; the external settlement must be verified and reconciled before credit or payout completion.
+
+MANUAL MINIPAY PAYOUT
+Destination must be manually verified. The operator performs the approved external transfer; evidence/reference and settlement state are recorded. User-facing processing window is 1–7 business days.
+
+MANUAL BANK PAYOUT
+Operator verifies beneficiary details and performs direct bank transfer; operator identity, evidence, bank reference, status, and reconciliation are recorded. User-facing processing window is 1–7 business days.
+
+AUTOMATIC DAIMO PAYOUT
+Provider adapter with explicit destination/network/asset configuration, authenticated calls, idempotency, callback/polling handling, and reconciliation. No silent fallback.
+
+SERVICE FEE
+The 15% Platform Service & Maintenance Fee applies to eligible withdrawals, not ordinary user funding deposits. Gross/fee/net are disclosed before confirmation and reconciled separately.
+
+RELATED DOCUMENTS
+See 36_WALLET_LEDGER.txt, 37_WITHDRAWAL_SYSTEM.txt, 48_DATABASE_SCHEMA.txt, 49_API_SPECIFICATION.txt, 55_NIGERIA_COMPLIANCE.txt, 56_FINANCIAL_CONTROLS.txt, 70_ACCEPTANCE_CRITERIA.md, 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and 84_USER_FUNDING_DEPOSIT_SYSTEM.md.

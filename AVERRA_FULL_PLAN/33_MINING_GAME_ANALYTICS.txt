@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME ANALYTICS
+
+Document: 33_MINING_GAME_ANALYTICS.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines gameplay telemetry, funnels, performance metrics, and analytical boundaries.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+METRICS
+DAU/WAU, session time, zone entry, machine use, resource flow, mission progression, retention, crashes, load time, FPS/frametime, asset load failures, and event participation.
+
+EVENT MODEL
+Versioned event names, actor, timestamp, context, game version, session, and relevant non-sensitive dimensions.
+
+SEPARATION
+Analytics can explain activity but cannot authorize rewards or replace authoritative game/financial records.
+
+PRIVACY
+Avoid unnecessary identifiers; use pseudonymous analytics identifiers where possible.
+
+OPERATIONAL USE
+Create dashboards and alerts for performance, economy anomalies, content engagement, and abuse signals.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

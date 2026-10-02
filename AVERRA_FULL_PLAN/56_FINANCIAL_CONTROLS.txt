@@ -1,0 +1,47 @@
+AVERRA — FINANCIAL CONTROLS
+
+Document: 56_FINANCIAL_CONTROLS.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines financial governance, reserves, reconciliation, segregation of duties, deposit confirmation, and fee controls.
+
+CONTROL ACCOUNTS
+Provider receivable, settled revenue, user reward liability, User Funding Balance, platform available funds, reserve, payout clearing, deposit clearing, payment operations, and fee revenue as required.
+
+DEPOSIT CONTROL
+No MiniPay deposit credits User Funding Balance until:
+1. on-chain/payment settlement has been independently verified; and
+2. an authorized admin confirms the deposit.
+
+MATCHING CONTROL
+For shared destination addresses, use request reference + token contract + exact transfer amount + destination + tx hash/event reference + sender/time context. A client-provided screenshot is never the sole evidence.
+
+WRONG TOKEN / WRONG NETWORK
+Route to NEEDS_REVIEW. No automatic credit. Recovery is only attempted where technically possible and permitted; no guaranteed recovery promise.
+
+DUPLICATE CONTROL
+A verified transfer event can be credited once. Enforce database uniqueness and idempotent financial commands.
+
+UNDER / OVERPAYMENT
+Do not credit a mismatched amount automatically. Admin review determines whether to top-up, hold, return excess, or reject; decision and valuation basis are audited.
+
+LIMITS / EXPIRY
+Use configurable minimum, maximum, rolling-period limits and a deposit-request expiry. Proposed launch defaults are documented in 38_PAYMENT_OPERATIONS.txt and can be changed only through controlled configuration.
+
+SEGREGATION OF DUTIES
+Separate preparation, approval and reconciliation capabilities: deposit.verify / payout.execute (prepare) must be held by different people from deposit.approve (approve), and deposit.reconcile / withdrawal.reconcile (reconcile). Capability codes are defined in the CANONICAL CAPABILITY MATRIX in doc 43. Two-person confirmation is required above the configured high-value threshold. No self-approval.
+
+RECONCILIATION
+At least daily, reconcile incoming deposits against chain/payment evidence, internal deposit requests, confirmed funding credits, refunds/recovery operations, and unresolved review cases.
+
+USER FUNDING
+Confirmed funding credits are separate from earned rewards. Funding spends are separate financial events and must retain purchase/entitlement references.
+
+WITHDRAWAL FEE CONTROL
+The baseline 15% Platform Service & Maintenance Fee is calculated from gross eligible withdrawal amount, disclosed before confirmation, recorded as a separate fee event, and included in reporting/reconciliation. It does not apply to ordinary deposits.
+
+OVERRIDES
+Financial adjustments require reason, authorization, before/after context, evidence, and immutable audit history. Corrections use compensating entries.

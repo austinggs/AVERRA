@@ -1,0 +1,33 @@
+AVERRA — AVERRA — MINING GAME EVENTS
+
+Document: 26_MINING_GAME_EVENTS.txt
+Version: 1.0
+Status: Approved planning baseline
+Last reviewed: 2026-09-29
+
+PURPOSE
+Defines limited-time events, modifiers, schedules, and event rewards.
+
+NORMATIVE LANGUAGE
+The terms MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and MAY are used as engineering requirements.
+
+EVENT MODEL
+Event ID, schedule, eligibility, participating systems, modifiers, content, reward table, budget if financial, and version.
+
+SCHEDULING
+Server time defines event state; client clocks cannot extend an event.
+
+REWARD SAFETY
+Event financial rewards are budget-capped and processed through Reward Engine.
+
+OPERATIONS
+Admins can pause or end an event without deleting historical participation records.
+
+TESTING
+Time-bound behavior requires deterministic test clocks or simulation fixtures.
+
+IMPLEMENTATION NOTES
+This document is a planning/source-of-truth artifact. Concrete library choices, exact endpoint names, provider-specific payload formats, and deployment values may be finalized during implementation only when they preserve the stated invariants and pass the defined verification gates.
+
+RELATED DOCUMENTS
+See 71_ARCHITECTURAL_LAWS.md, 82_SOURCE_INDEX.md, and the domain-specific database/API/acceptance documents for cross-system contracts.

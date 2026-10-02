@@ -1,0 +1,88 @@
+AVERRA — ADMIN PLATFORM
+
+Document: 43_ADMIN_PLATFORM.txt
+Version: 1.3
+Status: Approved planning baseline
+Last reviewed: 2026-09-30
+
+PURPOSE
+Defines the internal operations console and privileged workflows, including funding-deposit confirmation.
+
+MODULES
+Overview, users, tasks, advertisers, providers, transactions, User Funding/deposits, withdrawals, payment operations, fraud, disputes, support, promotions, analytics, system settings, audit logs.
+
+DEPOSIT REVIEW WORKFLOW
+Admin opens deposit → inspect request and submitted tx hash → view server-side verification result and chain/payment evidence → compare token/network/destination/amount → choose CONFIRM, REJECT, or NEEDS_REVIEW → system posts or withholds credit accordingly.
+
+RBAC
+Roles are bundles of capabilities; capabilities are the authorization primitive. See the CANONICAL CAPABILITY MATRIX section of this document, which is the single authorization source of truth. SQL guards, RLS policies, server routes and the admin UI must all reference the same capability codes. Canonical roles: SUPER_ADMIN, FINANCE_ADMIN, PAYMENT_OPERATOR, PAYMENT_APPROVER, DEPOSIT_REVIEWER, DEPOSIT_APPROVER, RECONCILIATION_OPERATOR, FRAUD_REVIEWER, SUPPORT_AGENT, SUPPORT_MANAGER, CONTENT_MODERATOR, GAME_ADMIN, PROVIDER_MANAGER, ADVERTISER_MANAGER, ANALYST, AUDITOR. Legacy labels resolve as follows: PAYMENT_OPERATOR, DEPOSIT_APPROVER and RECONCILIATION_OPERATOR are canonical roles; SUPPORT_VIEWER is a read-only capability subset of SUPPORT_AGENT. Least privilege is required.
+
+TWO-PERSON CONTROL
+Deposits above the configured high-value threshold require two distinct authorized approvers. The same operator cannot satisfy both approvals.
+
+OPERATOR ATTRIBUTION
+Every manual financial action records operator ID, role, timestamp, reason where required, and evidence/reference.
+
+EXCEPTION CASES
+Wrong token/network, native CELO, underpayment, overpayment, late transfer, duplicate transaction, unknown sender, and ambiguous matching route to review rather than automatic credit.
+
+AUDIT
+Admin decisions are append-only audit events. Reversing a decision uses compensating financial events and a new review record.
+
+
+SUPPORT OPERATIONS
+Support management is performed through the admin Support module. Support agents may read linked financial context but cannot mutate balances unless they separately hold the required privileged financial role. Human-authored replies and material support actions are audit logged. @vipaverra is the official Telegram support channel and is treated as an intake channel, not a financial-authority channel.
+
+REVIEWS / COMMUNITY ADMIN
+Add a Reviews & Community moderation module with review search, filters, reports, media inspection, moderation actions, verified-experience lookup, user abuse context, and moderation history. Moderators may hide, restore, reject, or otherwise act on public content according to policy. Review moderation must not mutate financial balances or transaction state. Human moderator identity is recorded for every material moderation action.
+
+
+## V7 Expansion
+The Admin Portal is expanded by `87_ADMIN_PORTAL_EXPANDED.md`. That document is the detailed operational specification for granular roles, financial workflows, MiniPay deposits, support, reviews, automation monitoring, dual approval, auditability, Supabase security, and Vercel deployment.
+
+
+CANONICAL CAPABILITY MATRIX
+This section is the single authorization source of truth for Averra administration.
+Capabilities, not role labels, are what server guards, SQL functions, RLS policies
+and the admin UI must check. Roles are convenience bundles of capabilities.
+
+CAPABILITY CODES
+- deposit.view, deposit.verify, deposit.approve, deposit.reconcile
+- withdrawal.view, withdrawal.review, withdrawal.approve, withdrawal.settle
+- withdrawal.reconcile, payout.execute, payout.destination.verify
+- ledger.adjust.request, ledger.adjust.approve
+- fee.config.write
+- user.view, user.restrict, account.status.write
+- fraud.review, fraud.decide
+- support.view, support.reply, support.assign, support.close, support.escalate
+- review.moderate, review.verified.write
+- game.content.write, game.leaderboard.moderate, game.player.correct
+- provider.config.write, provider.reconcile, provider.secret.read
+- advertiser.manage, campaign.approve
+- analytics.view, analytics.financial.view
+- audit.view, audit.export
+- admin.role.assign, admin.session.revoke
+- system.config.write, system.killswitch.write
+
+ROLE BUNDLES
+- SUPER_ADMIN: all capabilities, but dual-control invariants still apply.
+- FINANCE_ADMIN: financial read, reconciliation and fee configuration.
+- PAYMENT_OPERATOR: deposit.view, deposit.verify, payout.execute, withdrawal.settle (preparation only, never approval).
+- DEPOSIT_REVIEWER: deposit.view, deposit.verify (triage, routes to NEEDS_REVIEW).
+- DEPOSIT_APPROVER: deposit.view, deposit.approve.
+- PAYMENT_APPROVER: withdrawal.view, withdrawal.approve.
+- RECONCILIATION_OPERATOR: deposit.reconcile, withdrawal.reconcile, audit.view.
+- FRAUD_REVIEWER: fraud.review, fraud.decide, withdrawal.review.
+- SUPPORT_AGENT, SUPPORT_MANAGER: support.* (SUPPORT_MANAGER adds support.escalate).
+- CONTENT_MODERATOR: review.moderate.
+- GAME_ADMIN: game.content.write, game.leaderboard.moderate. May NOT mint money.
+- PROVIDER_MANAGER: provider.config.write, provider.reconcile.
+- ADVERTISER_MANAGER: advertiser.manage, campaign.approve.
+- ANALYST: analytics.view; analytics.financial.view only if separately granted.
+- AUDITOR: audit.view, audit.export.
+
+INVARIANTS
+- A user must never approve their own dual-control action.
+- ledger.adjust.approve and deposit.approve above the configured threshold require
+two distinct authorised humans.
+- No role bypasses server-side capability checks; the admin UI is never authority.

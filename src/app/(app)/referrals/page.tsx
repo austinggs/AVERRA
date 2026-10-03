@@ -24,17 +24,26 @@ const STATUS_COPY: Record<string, string> = {
   REJECTED: 'Not eligible.',
 };
 
+// Referral read model is UNCHANGED by migration 047: `public.get_referral_overview`
+// already returns the caller's code, their referrals and their counts. What changed is
+// that a code now EXISTS, so this page has something real to show.
 export default async function ReferralsPage() {
   // Referral state is read server-side so the page cannot render a stale
   // "qualified" badge from a cached client fetch.
   const user = await requireUser();
   const overview = await getReferralOverview(user.id);
 
+  // Doc 39 TRANSPARENCY: the user sees status and reason. Internal risk signals are
+  // never shown, and are never queried here.
+  const shareLink = overview.code
+    ? `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/sign-up?ref=${overview.code}`
+    : null;
+
   return (
     <div>
       <PageHeader
         title="Referrals"
-        description="Invite people to Averra. A referral only earns once the person you referred completes qualifying activity — signing up alone pays nothing."
+        description="Share your code. When someone joins with it, they are recorded as yours. A referral only earns once the person you referred completes qualifying activity — signing up alone pays nothing."
       />
 
       <Card tone="brand" className="mt-6">
@@ -44,15 +53,31 @@ export default async function ReferralsPage() {
           <>
             <p className="mt-3 font-mono text-2xl font-bold tracking-widest">{overview.code}</p>
             <p className="mt-3 text-sm leading-relaxed text-white/85">
-              Share this code. When someone you refer reaches {overview.thresholdMinor ?? 0} in
-              attributed earnings, the referral qualifies and a reward is created for you.
+              {overview.thresholdMinor
+                ? `When someone you refer reaches ${overview.thresholdMinor} in attributed earnings, the referral qualifies and a reward is created for you.`
+                : 'Share your code. A referral earns nothing until the person you refer completes qualifying activity.'}
             </p>
+
+            {shareLink ? (
+              <>
+                <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/70">
+                  Your invite link
+                </p>
+                <p className="mt-1 break-all font-mono text-sm text-white">{shareLink}</p>
+                <p className="mt-3 text-xs leading-relaxed text-white/80">
+                  Send this link to the person you want to invite. When they open it, the code is
+                  already filled in for them. The code only works at signup — it cannot be added to
+                  an account afterwards, which is what stops someone joining now and claiming a
+                  referral later.
+                </p>
+              </>
+            ) : null}
           </>
         ) : (
           <>
             <p className="mt-3 text-sm leading-relaxed text-white/85">
-              You do not have a referral code yet. Referral codes are issued when the referral
-              programme opens.
+              You do not have a referral code yet. Codes are issued when the referral programme
+              opens.
             </p>
             <p className="mt-3 text-xs leading-relaxed text-white/75">
               Until then there is nothing to share, and sharing a link would earn nothing: a

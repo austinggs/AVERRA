@@ -96,9 +96,32 @@ export async function getProfile(userId: string) {
 
 export type ProfileRow = NonNullable<Awaited<ReturnType<typeof getProfile>>>;
 
+/**
+ * The three states an account can be in, from the user's point of view.
+ *
+ * `UNPROVISIONED` exists because it is NOT the same as `RESTRICTED`, and conflating
+ * them is what made every user see "Account restricted". A missing profile row is a
+ * setup gap; a SUSPENDED account is a decision somebody made. The two need different
+ * words, different actions, and different support paths.
+ */
+export type AccountAccessState = 'ACTIVE' | 'RESTRICTED' | 'UNPROVISIONED';
+
+/**
+ * Classifies the account.
+ *
+ * `null` means no profile row exists. Migration 044's trigger makes that close to
+ * impossible for new signups, but it is still a distinct state rather than a
+ * restricted one, because the correct response is "finish setting up", not "contact
+ * support about a suspension you never received".
+ */
+export function accountAccessState(profile: ProfileRow | null): AccountAccessState {
+  if (!profile) return 'UNPROVISIONED';
+  return profile.account_status === 'ACTIVE' ? 'ACTIVE' : 'RESTRICTED';
+}
+
 /** A suspended or closed account must not reach the earning or wallet surfaces. */
 export function isAccountActive(profile: ProfileRow | null): boolean {
-  return profile?.account_status === 'ACTIVE';
+  return accountAccessState(profile) === 'ACTIVE';
 }
 
 /**

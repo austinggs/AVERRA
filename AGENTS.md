@@ -126,6 +126,10 @@ state change. See docs/adr/.
   and handlers. `payload.ts` is pure and unit tested; the rest are server-only.
 - `src/lib/tasks/` - pure mirrors of the doc 12 verification rules, for honest UI
   copy. It decides nothing; the database is the authority.
+- `src/lib/game/scene.ts` - pure scene model for the Mining Game client: placement,
+  visual intent, and the version guard. A WebGL canvas cannot be unit tested, so
+  every decision with arithmetic in it lives here instead. `interpolatedEnergy` is
+  the one place a client clock touches a number, and it is clamped twice.
 - `src/components/ui/` - the design system. `MoneyState` is the one that
   matters; see below.
 - `src/lib/deposits/config.ts` - the ONLY source of the supported-token allowlist.
@@ -194,6 +198,45 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   `public` wrapper surface, and the three missing `app_private` commands.
 - CR-0016 - Reviews and community system (doc 86).
 - CR-0017 - Paid perks, donations and the funding-spend path (doc 83).
+- CR-0020 - Mining Game Three.js rendering layer (doc 17, 31). Additive: `GameShell`
+  remains the single action path and was not modified.
+- CR-0021 - Review authoring commands and the reply outbox (doc 86). Migration 042.
+
+## The reply outbox event is a trigger, on purpose
+
+Migration 039's `submit_review_comment` writes no outbox event, so there was
+nothing to notify from. The obvious fix is to `create or replace` that function
+and add the insert - which means retyping an eighty-line body that is already
+applied and reviewed. Do not do that. Migration 042 uses an `after insert` trigger
+instead: it is additive, it fires in the same transaction by construction, and
+migration 039 stays byte-identical.
+
+Three rules the trigger must keep. Each is asserted in
+`supabase/tests/review_authoring.sql`, so removing one fails a named test:
+
+1. **No self-notification** - and the suite carries a CONTROL assertion that a
+   different user's reply _does_ enqueue, so "zero" cannot pass just because the
+   trigger never fires.
+2. **The payload carries no comment text.** The comment is still PENDING when the
+   trigger runs, so its content is unmoderated (doc 86 PRIVACY).
+3. **The recipient is the review author**, taken from the database, never from a
+   caller.
+
+## Three.js renders, it never decides
+
+Doc 17: "Three.js renders client presentation and interaction; it does not
+authoritatively decide inventory, rewards, progression, or energy." The mining
+game therefore has two layers over one snapshot: `GameScene` draws, and
+`GameShell` owns every action. Do not "simplify" by having the canvas issue a
+game action - that would create a second path to a mutation, and the state
+version guard in `src/lib/game/scene.ts` exists precisely because late responses
+must not overwrite newer authoritative state.
+
+`interpolatedEnergy` looks like money being computed in the browser. It is not,
+and it must never become so: the server recomputes energy on every action, so
+the function is a display-only ease clamped to `energyMax` and floored at the
+stored value, with a five-minute cap on the preview window. Removing either
+guard fails a named test in `tests/game/scene.test.ts`.
 
 ## The risk gate wraps the money path; it is not a second money path
 

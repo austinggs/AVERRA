@@ -34,7 +34,7 @@ AVERRA_FULL_PLAN implemented?": no, and here is precisely where the line falls.
 | Provider adapters, offers, surveys, callbacks, reconciliation     | 3 / M3            | COMPLETE (no live provider onboarded)                                                  |
 | Native tasks, verification, budgets                               | 4 / M4            | VERIFIED                                                                               |
 | Mining Game server state, machines, energy, inventory             | 5 / M5            | COMPLETE (server side only)                                                            |
-| Mining Game Three.js shell, asset pipeline, world                 | 5 / M5            | **ABSENT**                                                                             |
+| Mining Game Three.js shell, asset pipeline, world                 | 5 / M5            | Rendering layer COMPLETE (CR-0020); assets/LOD/audio absent                            |
 | Game expansion: missions, events, achievements, leaderboards      | 6 / M5            | COMPLETE                                                                               |
 | Withdrawals, payout destinations, 15% fee, manual payouts         | 7 / M6            | COMPLETE                                                                               |
 | User Funding deposits, MiniPay manual, token tiers                | 7 / M6            | COMPLETE                                                                               |
@@ -42,7 +42,7 @@ AVERRA_FULL_PLAN implemented?": no, and here is precisely where the line falls.
 | Cash Link operations                                              | 7 / M6            | Data model COMPLETE; provider integration PLANNED                                      |
 | Referrals, gamification, advertiser platform                      | 8                 | COMPLETE                                                                               |
 | Fraud/risk, moderation, support, notifications                    | 9                 | VERIFIED                                                                               |
-| Reviews & Community (docs 86, 76 addition, 77 addition)           | 9 / M7            | Data + authority layer COMPLETE (CR-0016); API + UI PLANNED                            |
+| Reviews & Community (docs 86, 76 addition, 77 addition)           | 9 / M7            | Data + authority + API + UI COMPLETE (CR-0016, CR-0021); console absent                |
 | Admin Portal UI (doc 87, 20 modules)                              | 9                 | **ABSENT** (RBAC/dual-approval data model COMPLETE)                                    |
 | Paid perks, donations, funding spend (doc 83, 75)                 | 8                 | Data + funding-spend commands COMPLETE (CR-0017); API + UI + recurring billing PLANNED |
 | Production hardening: security testing, DR, load, runbooks        | 10 / M7           | PLANNED                                                                                |
@@ -214,3 +214,188 @@ open gate (CR-0016): the database layer is complete and tested, and the API/UI
 work carries no financial authority. The alternatives are the doc 83 paid-perks
 API surface (touches the funding-spend commands, so it needs the money-path
 treatment) and the Three.js shell (greenfield client work, no financial risk).
+
+---
+
+## Session - 2026-10-03 - Reviews & Community API and UI, then the Mining Game Three.js layer
+
+Date: 2026-10-03
+Agent/owner: AI coding agent (session with the repository owner)
+Phase: 9 - Operations (reviews addition), then 5 - Mining Game
+Milestone: M7 (reviews addition), M5 (game client)
+Status: Reviews API/UI COMPLETE for the non-media surface; game rendering layer
+COMPLETE; both partially verified
+Task: Close the two oldest unblocked application-layer gaps. Neither touches
+financial authority, which is why both were safe to do before the Admin Portal.
+
+Relevant source docs: `86_REVIEWS_COMMUNITY_SYSTEM.md` (API SURFACE, IMAGE
+SUPPORT, NOTIFICATIONS), `83_MONETIZATION_PAID_PERKS.md`, `10_UI_UX_SPECIFICATION.txt`
+(REVIEWS & COMMUNITY UI), `17_MINING_GAME_THREEJS_ARCHITECTURE.txt`,
+`31_MINING_GAME_SERVER_AUTHORITY.txt`, `16_MINING_GAME_GAMEPLAY.txt`,
+`71_ARCHITECTURAL_LAWS.md` (laws 63-69, 26), `65_TESTING_STRATEGY.md`.
+
+Existing implementation inspected: migration 038/039 (review schema and 20
+functions), 040/041 (paid perks), 030 (`public.get_game_state`), the `app_private`
+capability guard, `src/lib/api/route.ts`, `src/components/game/GameShell.tsx`,
+every route under `src/app/api/`.
+
+Changes made:
+
+Reviews (no migration):
+
+- `src/app/api/reviews/route.ts` - `GET` public, `POST` submit.
+- `src/app/api/reviews/mine/route.ts`, `src/app/api/reviews/reports/route.ts`.
+- `src/app/api/reviews/[reviewId]/comments/route.ts` - `GET` public, `POST` reply.
+- `src/app/api/admin/reviews/route.ts` - moderation queues, `review.moderate`.
+- `src/app/api/admin/reviews/moderate/route.ts` - human decision, append-only.
+- `src/app/api/admin/reviews/reports/[reportId]/resolve/route.ts`.
+- `src/lib/reviews/contract.ts`, `src/lib/reviews/queries.ts`.
+- `src/app/(app)/reviews/page.tsx`, `src/app/(app)/reviews/mine/page.tsx`,
+  `src/components/reviews/ReviewCard.tsx`, `src/components/reviews/ReviewForm.tsx`,
+  `src/components/ui/StarRating.tsx`.
+- `tests/reviews/contract.test.ts` - 24 assertions.
+
+Mining Game (no migration, no new API):
+
+- `src/lib/game/scene.ts` - pure scene model.
+- `src/components/game/GameScene.tsx` - the Three.js renderer.
+- `src/components/game/GameScenePanel.tsx` - lazy-loaded, WebGL-guarded panel.
+- `tests/game/scene.test.ts` - 39 assertions.
+- `src/app/(app)/game/page.tsx` - panel added above the shell; `GameShell` unmodified.
+
+Tests added/run: 200 -> **239 passing across 13 files**. Reviews 24 assertions,
+game 39. Build, typecheck, lint, `check:bundle` and prettier all clean. Three.js is
+confirmed isolated in a 529 KB lazy chunk rather than the initial load.
+
+Defect injection: removing the energy clamp in `interpolatedEnergy` failed exactly
+two named assertions, and the suite was restored. Recorded in CR-0020 alongside two
+bad test assertions that were found and corrected rather than worked around.
+
+Security/financial considerations:
+
+- Nothing in either subsystem can move money. A purchase never becomes an earned
+  reward (law 47) and a review carries no financial column at all (law 63).
+- `review.moderate` is checked twice on purpose: once for a clean 403 in the route,
+  and again inside the SQL wrapper, so a revoked operator fails even if the route
+  were bypassed. `p_moderator_id` always comes from the verified session, never
+  from the request body or the query string.
+- The Verified Experience badge is deliberately NOT offered in the client form. A
+  client-supplied `verifiedExperienceId` would be a self-asserted claim, which is
+  what law 64 forbids; the server must look up the author's real activity.
+- The 3D layer writes no state, and a tampered client clock cannot fill the energy
+  gauge (doc 17 SECURITY).
+
+Open verification gates:
+
+- **No live database run.** `npm run test:db` needs `SUPABASE_DB_URL` in the
+  process environment, and the pooler form is not derivable from the files on disk.
+  Nothing built this session has been executed against Postgres.
+- **No visual verification of the 3D scene.** There is no `tests/e2e` and no
+  Playwright browser cache, so the canvas has never been drawn. It needs one manual
+  pass at `npm run dev` on `/game`.
+- Doc 86 endpoints still missing because **no database command exists for them**:
+  `PATCH`/`DELETE` on reviews and comments, and comment media (the
+  `review_comment_media` table exists with no writer). Migration 039 also writes no
+  outbox events, so reply notifications have no source yet.
+- Supabase Storage policies and media upload are not built. Media renders as a
+  text placeholder; a `storagePath` is never resolved into a guessed public URL.
+- Doc 83 has **no API section at all**, so the paid-perks endpoint set would be
+  invented rather than implemented. CR-0017's own reference to a "Doc 83 API
+  SURFACE" does not exist in the document.
+- `paid_perk_orders` is **never inserted** by any migration, so `PERK_PURCHASE`
+  always raises `unknown order`. The purchase path is dead until a
+  `create_paid_perk_order` command exists. The donation path is complete.
+- Game assets, LOD, instancing, texture budgets and audio are absent (doc 17).
+- No `src/app/admin` pages exist; the admin surface is API-only.
+
+Acceptance criteria satisfied: the doc 86 application-layer criteria that do not
+require Storage or an author-editing command. Doc 17 is a planning baseline with no
+numbered criteria. Neither subsystem is claimed to meet criteria it has not been
+tested against.
+
+Files changed: listed in `docs/change-records/CR-0020-mining-game-threejs-layer.md`.
+
+Next atomic task: **migration 042** - the review authoring commands (update/soft-
+delete reviews and comments), `attach_review_comment_media`, the reply outbox event,
+and Supabase Storage policies. These are the missing half of doc 86 and every one
+of them is a database-authority gap rather than a UI preference.
+
+---
+
+## Session - 2026-10-03 - Review authoring commands and reply notifications (CR-0021)
+
+Date: 2026-10-03
+Agent/owner: AI coding agent (session with the repository owner)
+Phase: 9 - Operations (REVIEWS / COMMUNITY ADDITION)
+Milestone: M7 (Reviews/Community addition)
+Status: COMPLETE and **VERIFIED LIVE**: 13 suites / 274 assertions / 0 failures
+Task: Fill the five doc 86 endpoints that had no database command behind them, and
+give `review_comment_media` the writer it never had.
+
+Relevant source docs: `86_REVIEWS_COMMUNITY_SYSTEM.md` (API SURFACE lines 198-216,
+IMAGE SUPPORT, NOTIFICATIONS line 220, PRIVACY), `71_ARCHITECTURAL_LAWS.md` laws
+63-69, `80_PROGRESS_TEMPLATE.md`.
+
+Existing implementation inspected: migration 038 (six tables and their
+constraints), 039 (20 functions), 001 (`app.outbox_events` and its dedup index),
+011 (`app.notifications`), `src/lib/api/route.ts`, `src/lib/observability/handlers.ts`.
+
+Changes made:
+
+- `supabase/migrations/20260930000042_review_authoring.sql` (new) - 11 functions:
+  `update_review`, `delete_review`, `update_review_comment`,
+  `delete_review_comment`, `attach_review_comment_media`, an outbox trigger, and
+  five `public` entry points in the migration-035 pattern.
+- `supabase/tests/review_authoring.sql` (new) - 26 assertions.
+- `src/app/api/reviews/[reviewId]/route.ts` (new) - PATCH, DELETE.
+- `src/app/api/reviews/comments/[commentId]/route.ts` (new) - PATCH, DELETE.
+- `src/lib/observability/handlers.ts` - the `review.comment.added` handler.
+
+Tests added/run: **26 pgTAP assertions, all executed against the live database.** Full
+suite 13 files / 274 assertions / 0 failures (was 248 across 12). This is the first
+time the pgTAP suites have ever run against a live project; `npm run test:db:pooled`
+now exists to keep them running. Structural gates: `check:migrations` 154 functions /
+0 errors (was 143), `check:grants` 80 public functions / 0 errors (was 75). `typecheck`,
+`lint`, `test` (239), `build` and `prettier --check .` all clean.
+
+Defect injection: an orphan `$$;` was injected into 042 and `check:migrations`
+failed with both the orphan and the odd-delimiter error, naming line 434. Restored
+byte-identically.
+
+Security/financial considerations:
+
+- Every command scopes its lookup by BOTH the session user id and the record id, so
+  another author's row is reported as **unknown** rather than **forbidden** -
+  reporting "forbidden" would confirm that an id exists (doc 67 BOLA).
+- Deletion is SOFT. The row survives, because doc 09 requires the author to see
+  what happened to their content and doc 67 requires the moderation trail to
+  outlive a takedown. Asserted: a deleted review still exists.
+- A PUBLISHED review cannot be edited in place. Rewriting text others have already
+  read and replied to is a history rewrite wearing a UI.
+- The reply notification carries **no comment text**. The comment is still PENDING
+  when the trigger fires, so its content is unmoderated and must not escape through
+  a notification (doc 86 PRIVACY). Asserted: `payload ? 'body'` is false.
+- Law 63 asserted by absence: no authoring command's `prosrc` names a money
+  primitive.
+- `notification_category` gained `COMMUNITY`, so a user filtering alerts can
+  separate "someone replied to you" from generic platform notices.
+
+Open verification gates:
+
+- Supabase Storage policies and the media upload route are still not built.
+  `attach_review_comment_media` records metadata for an object nothing uploads.
+- The review moderation console UI is not built. There is still no `src/app/admin`
+  directory at all; the admin surface is API-only.
+
+Acceptance criteria satisfied: the doc 86 API SURFACE endpoints that depend on an
+authoring command are now backed by a command. Media upload and the console remain
+outstanding, and no criterion is claimed for anything untested.
+
+Files changed: listed in
+`docs/change-records/CR-0021-review-authoring-and-reply-notifications.md`.
+
+Next atomic task: **`create_paid_perk_order`**. Migration 041's
+`purchase_with_funding` requires a pre-existing `app.paid_perk_orders` row, and no
+migration ever inserts one, so `PERK_PURCHASE` always raises `unknown order`. The
+entire paid-perks purchase path is dead until that command exists, which makes it
+the next database-authority gap rather than a UI preference.

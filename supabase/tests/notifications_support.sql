@@ -168,8 +168,20 @@ select is(
    join pg_type t on t.oid = e.enumtypid
    join pg_namespace n on n.oid = t.typnamespace
    where n.nspname = 'app' and t.typname = 'notification_category'),
-  '{REWARD,WITHDRAWAL,DEPOSIT,TASK,REFERRAL,SECURITY,SUPPORT,SYSTEM}'::name[],
-  'notification categories match the doc 45 event list'
+  -- NINE values, not eight.
+  --
+  -- `COMMUNITY` was added by migration 042 and this assertion is what caught it.
+  -- It is kept as an EXACT list rather than relaxed to a containment check: a
+  -- containment test would also pass if someone DELETED `SECURITY`, which is the
+  -- failure this test exists to prevent.
+  --
+  -- Authority: doc 45 REVIEW NOTIFICATIONS - "When another user replies to a review
+  -- or configured thread, Averra may create a factual in-app notification." The
+  -- eight-value list was an implementation mapping of doc 45's EVENTS prose, which
+  -- never enumerated categories exhaustively, so the ninth is consistent with the
+  -- spec rather than a departure from it. Recorded in CR-0021.
+  '{REWARD,WITHDRAWAL,DEPOSIT,TASK,REFERRAL,SECURITY,SUPPORT,SYSTEM,COMMUNITY}'::name[],
+  'notification categories match the doc 45 event list plus COMMUNITY for reviews'
 );
 
 select * from finish();

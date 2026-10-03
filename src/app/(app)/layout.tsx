@@ -39,14 +39,23 @@ export default async function AppShell({ children }: { children: React.ReactNode
             <span className="text-base font-bold tracking-tight text-ink-900">Averra</span>
           </Link>
 
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="min-h-10 rounded-pill px-3 text-sm font-medium text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900"
+          <div className="flex items-center gap-2">
+            <Link
+              href="/settings"
+              className="inline-flex min-h-10 items-center rounded-pill px-3 text-sm font-medium text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900"
             >
-              Sign out
-            </button>
-          </form>
+              Settings
+            </Link>
+
+            <form action={signOutAction}>
+              <button
+                type="submit"
+                className="min-h-10 rounded-pill px-3 text-sm font-medium text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 

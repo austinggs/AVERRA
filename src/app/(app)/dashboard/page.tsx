@@ -1,4 +1,4 @@
-import { requireUser, getProfile, isAccountActive } from '@/lib/auth/session';
+import { requireUser, getProfile, accountAccessState } from '@/lib/auth/session';
 import { getWalletSummary } from '@/lib/wallet/summary';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, SectionHeading } from '@/components/ui/Card';
@@ -16,15 +16,45 @@ function formatMinor(amount: bigint): string {
 export default async function DashboardPage() {
   const user = await requireUser();
   const profile = await getProfile(user.id);
-  const wallet = await getWalletSummary(user.id);
 
-  if (!isAccountActive(profile)) {
+  // THIRD STATE, THIRD MESSAGE.
+  //
+  // This used to be `if (!isAccountActive(profile))`, which evaluated a missing
+  // profile row as "restricted" and told every affected user that their account was
+  // suspended. A setup gap and a decision somebody made need different words.
+  const access = accountAccessState(profile);
+
+  if (access === 'UNPROVISIONED') {
+    return (
+      <div>
+        <PageHeader title="Setting up your account" />
+        <Card className="mt-6">
+          <p className="text-sm leading-relaxed text-ink-700">
+            We are still finishing setting up your account. This usually takes a moment and does not
+            need anything from you. If it is still not ready in a few minutes, contact support and
+            we will sort it out.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ButtonLink href="/dashboard" size="sm">
+              Check again
+            </ButtonLink>
+            <ButtonLink href="/support" variant="secondary" size="sm">
+              Contact support
+            </ButtonLink>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (access === 'RESTRICTED') {
     return (
       <div>
         <PageHeader title="Account restricted" />
         <Card className="mt-6">
           <p className="text-sm leading-relaxed text-ink-700">
-            This account is not currently active. If you believe this is a mistake, contact support
+            This account is not currently active. Only a human support agent can tell you why, and
+            nobody outside Averra can lift it. If you believe this is a mistake, contact support
             through the Support Center.
           </p>
           <div className="mt-4">
@@ -36,6 +66,8 @@ export default async function DashboardPage() {
       </div>
     );
   }
+
+  const wallet = await getWalletSummary(user.id);
 
   const earned = wallet.earnedRewards;
 

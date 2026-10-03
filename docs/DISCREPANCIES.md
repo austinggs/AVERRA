@@ -1540,3 +1540,184 @@ In a pgTAP suite, only a pgTAP function is an assertion. If a statement is a
 fixture, write it so it reads as a fixture - and if it is worth executing, it is
 usually worth asserting, because an unasserted fixture is a place for a silent
 failure to hide.
+
+## Q-36 - An assertion passed for a reason nobody could see
+
+**Status:** FIXED in `supabase/tests/review_authoring.sql` (CR-0021)
+**Severity:** a security assertion that could not fail
+
+### The defect
+
+The no-self-notification rule is the thing standing between "someone replies to
+their own review" and a notification they did not want. The first draft asserted it
+like this:
+
+```sql
+select is(
+  (select count(*)::int from app.outbox_events
+   where event_type = 'review.comment.added'
+     and aggregate_id = (
+       select (app_private.submit_review_comment(
+         p_user_id => '55555555-...',
+         p_review_id => (select id from app.reviews where idempotency_key = 'pgtap-042-self'),
+         p_body => 'Replying to my own review.',
+         p_idempotency_key => 'pgtap-042-self-reply' )).id::text
+      )),
+  0,
+  'replying to your own review enqueues nothing'
+);
+```
+
+It returned `0`. It passed. And it was measuring nothing.
+
+The scalar subquery CREATES the comment, the `after insert` trigger enqueues the
+outbox event, and the outer `count(*)` reads the result - all inside ONE
+statement. PostgreSQL evaluates the outer aggregate against that statement's
+snapshot, which was taken before the subquery inserted anything. The newly
+enqueued row is not visible to the same statement that caused it.
+
+So the count is zero **whether or not the trigger fires**. Remove the
+self-notification guard from the trigger entirely and this assertion still passes.
+
+### How it was caught
+
+Not by review. By the CONTROL assertion sitting next to it, which created a reply
+from a DIFFERENT user against the same review and expected `1`:
+
+    not ok 25 - CONTROL: a reply from another user DOES enqueue
+        have: 0
+        want: 1
+
+The control owed one and got zero. That is the signature of a visibility problem
+rather than a trigger problem - and it is exactly why the control exists. Without
+it, the vacuous assertion would have shipped green and nobody would ever have
+learned that the rule was untested.
+
+### The fix
+
+Creation and counting are now in SEPARATE statements, with the id captured in a
+temporary table in between:
+
+```sql
+create temporary table t_self_reply on commit drop as
+  select (app_private.submit_review_comment(...)).id as id;
+
+select is(
+  (select count(*)::int from app.outbox_events
+   where event_type = 'review.comment.added'
+     and aggregate_id = (select id::text from t_self_reply)),
+  0, '...');
+```
+
+### The general rule
+
+**An assertion that calls a mutating function inside the expression it is
+measuring measures its own snapshot, not its own effects.** Whenever the value
+under test is produced by the statement being tested, the write and the read must
+be split across statements.
+
+This is a fifth arrival of a pattern this repository has now hit repeatedly:
+`tasks.sql` test 6 and `risk_moderation.sql` test 10 each reported the wrong
+constraint, the NULL foreign key fixture died before reaching its rule, two
+fixtures broke two constraints at once, and the `notifications_support.sql` grants
+check named one function out of six. The common thread is never "the assertion is
+absent". It is "the assertion runs and reports success without measuring the
+property it names".
+
+And the standing remedy is unchanged, and it worked here: put a CONTROL next to
+the negative assertion, so a zero has to be distinguishable from a trigger that
+never fires at all.
+
+## Q-37 - Adding an enum value broke a suite that was pinning the old set
+
+**Status:** FIXED in `supabase/tests/notifications_support.sql` (CR-0021)
+**Severity:** a correct change that failed an existing test, and nearly got
+suppressed
+
+Migration 042 adds `COMMUNITY` to `app.notification_category` for review-reply
+alerts. `notifications_support.sql` asserted the enum EQUALS the eight-value doc
+45 list, so it failed:
+
+    have: {REWARD,...,SYSTEM,COMMUNITY}
+    want: {REWARD,...,SYSTEM}
+
+That is the gate working correctly and the change being wrong-adjacent, so the
+honest question is whether the ninth value is justified at all. It is: doc 45
+REVIEW NOTIFICATIONS states "When another user replies to a review or configured
+thread, Averra may create a factual in-app notification." The eight-value list was
+an implementation mapping of doc 45's EVENTS prose, which never enumerated
+categories exhaustively.
+
+The tempting fix is to relax the assertion to a containment check. That would be
+wrong: containment also passes if someone DELETED `SECURITY`, which is the failure
+the test exists to catch. The list stays EXACT, now with nine values, carrying the
+doc 45 citation and a note that the assertion is what caught it.
+
+### The general rule
+
+When a change breaks a test that pins a set, the first question is whether the
+set or the change is wrong - not how to make the assertion pass. And a test can be
+made to pass in ways that destroy its value; loosening an exact match to a
+containment check is one, and it is invisible in the diff.
+
+## Q-38 - Two migrations shipped a table that nothing could ever write to
+
+**Status:** one FIXED (paid_perk_orders, CR-0022); one still open
+(`review_comment_media` got its writer in CR-0021)
+**Severity:** a complete subsystem that could not function, reported as complete
+
+### The pattern
+
+Two migrations in this repository created a table, gave it constraints, indexes, a
+status enum and a comment describing its purpose, and never wrote a single row to
+it. Neither omission was caught by the structural gates, because both files are
+syntactically perfect.
+
+| Table                      | Created in | Writer  | Found by                                       |
+| -------------------------- | ---------- | ------- | ---------------------------------------------- |
+| `app.review_comment_media` | 038        | CR-0021 | reading doc 86's API SURFACE against `pg_proc` |
+| `app.paid_perk_orders`     | 040        | CR-0022 | grepping every migration for an INSERT         |
+
+`review_comment_media` is the more embarrassing one: doc 86 IMAGE SUPPORT says
+"Replies may also contain images", so the table was required by the spec and
+unreachable by construction. Its status column, its MIME CHECK and its
+storage-path constraints were all carefully modelled and all dead.
+
+`paid_perk_orders` cost more. `purchase_with_funding` requires an order row and
+refuses without one, so **every paid-perk purchase raised `unknown order` before
+touching money**. CR-0017 recorded this subsystem as "COMPLETE at the database
+level" on the strength of 35 passing pgTAP assertions - and those assertions passed
+because `supabase/tests/perks.sql` inserted the order row DIRECTLY:
+
+```sql
+insert into app.paid_perk_orders (user_id, product_id, price_minor, unit, idempotency_key)
+```
+
+**The fixture covered the gap instead of exposing it.** That is the part worth
+remembering. A test that fabricates the state a command is supposed to create will
+pass forever while the command is missing, and it looks like thorough coverage.
+
+### The general rule
+
+**Before calling a subsystem complete, confirm something can WRITE to each of its
+tables.** Not that the table exists, and not that the commands are declared -
+that a writer exists.
+
+Two cheap checks, both of which would have caught this:
+
+1. For each table in a subsystem, grep the migrations for `insert into <table>`.
+   No INSERT anywhere means no writer.
+2. Never let a test insert a row that a command in the same subsystem is supposed
+   to create. If a fixture must do it, the command is either missing or the fixture
+   is lying about the integration.
+
+This is the "enumerate the population, then filter" rule from Q-22 in a new place:
+both omissions were invisible because nothing ever asked a question that would
+have had an answer.
+
+### Still open
+
+The `GAME_PURCHASE` funding-spend path has the same shape. Migration 041 models the
+enum value, the target column and the check, and no game purchase path exists -
+that one is a deliberate deferral recorded in CR-0017 rather than an oversight, so
+it does not belong in this entry. It does belong on the same checklist.

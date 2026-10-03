@@ -166,6 +166,40 @@ export const handlers: Record<string, Handler> = {
     }
   },
 
+  'review.comment.added': async (event) => {
+    // Migration 042 trigger. Fires for every reply, including a reply-to-a-reply.
+    const reviewAuthorId = readString(event.payload, 'reviewAuthorId');
+    const commentId = readString(event.payload, 'commentId');
+    const reviewId = readString(event.payload, 'reviewId');
+
+    if (!reviewAuthorId || !commentId || !reviewId) {
+      // A malformed event is not retryable forever, but throwing lets the outbox
+      // record the error, which is what makes it diagnosable.
+      throw new Error('review.comment.added is missing required payload fields');
+    }
+
+    const reviewTitle = readString(event.payload, 'reviewTitle');
+
+    // Factual, fixed wording. Never generated text, never a quote of the
+    // comment - the comment is still PENDING when this runs, so its content has
+    // not been moderated and must not appear in a notification (doc 86 PRIVACY).
+    await notifyStateChange({
+      userId: reviewAuthorId,
+      category: 'COMMUNITY',
+      title: 'New reply on your review',
+      body:
+        'Someone replied to your review' +
+        (reviewTitle ? ` "${reviewTitle}"` : '') +
+        '. Open your reviews to read and reply.',
+      sourceEventType: 'review.comment.added',
+      // Keyed on the COMMENT, not the review, so a second and third reply each
+      // produce their own notification instead of deduplicating into one.
+      sourceId: commentId,
+      actionPath: '/reviews/mine',
+      actionLabel: 'View your reviews',
+    });
+  },
+
   'withdrawal.settled': async (event) => {
     const userId = readString(event.payload, 'userId');
     if (!userId) return;

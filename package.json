@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:db": "node tools/run-db-tests.mjs",
+    "test:db:pooled": "node tools/run-db-tests-pooled.mjs",
     "test:db:cli": "supabase test db",
     "e2e": "playwright test",
     "check:bundle": "node tools/check-client-bundle.mjs",

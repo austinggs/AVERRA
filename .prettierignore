@@ -3,6 +3,11 @@ AVERRA_FULL_PLAN
 AVERRA_V7_AUDIT.md
 supabase.md
 
+# Agent-tool scratch: a stray git worktree here once contained unformatted
+# YAML/JSON/Markdown and broke `prettier --check .` on the whole repository.
+# It is not part of the deliverable and must never gate the build.
+.kilo
+
 node_modules
 .next
 out

@@ -1280,3 +1280,100 @@ executing nothing.
 
 The URL reaches the runner through `env:`, is never echoed, and is never placed on the
 command line, so it cannot reach the job log.
+
+## Q-31 - `app.has_capability()` passes a REVOKED operator
+
+Found: 2026-10-02, while writing the authorization guard for the Reviews &
+Community moderation commands (CR-0016).
+
+The capability check that the foundation migration provides:
+
+    create or replace function app.has_capability(p_capability text)
+    ...
+      select exists (
+        select 1
+        from app.admin_users au
+        join app.admin_role_capabilities rc on rc.role_code = au.role_code
+        where au.user_id = auth.uid()
+          and rc.capability_code = p_capability
+      );
+
+`app.admin_users` carries `revoked_at`, `revoked_by`, and a partial index
+`idx_admin_users_role ... where revoked_at is null`. The function filters none of
+that, so an assignment that has been REVOKED still satisfies the check. Revocation
+that does not revoke is the most dangerous shape a security bug can take: the
+operator is told they were removed, the audit trail says they were removed, and the
+guard still authorises them.
+
+The TypeScript guard disagrees with it. `src/lib/auth/capabilities.ts` documents
+"A revoked assignment is not a role" and its `getActiveAdminRole` returns null on a
+revoked row. So the repository currently holds two definitions of authorization and
+they do not match.
+
+### Severity: latent, not live
+
+`app.has_capability` is effectively unreachable. It reads `auth.uid()`, which is
+NULL on the service-role connection every route handler uses, so every call returns
+false - which is also why the routes query capabilities explicitly instead
+(recorded in CR-0002). Nothing calls it today.
+
+It is reported anyway, and not merely as housekeeping, because of its own comment:
+"Canonical capability identifiers. Server-side guards and RLS must use these exact
+codes." That is an invitation to use it, and the first person who does will get a
+guard that fails closed on nothing and open on a revoked operator. It is also the
+exact failure shape this corpus already documents twice: a check that appears to
+enforce a property and does not (see the `checkOutParameterReturns` note in
+AGENTS.md, and the empty-population count in the Q-22 leak).
+
+### What CR-0016 did instead
+
+The new moderation commands call
+
+    app_private.operator_has_capability(p_user_id, p_capability)
+
+which takes the operator id explicitly (never `auth.uid()`) and DOES filter
+`revoked_at is null`. A pgTAP assertion proves an actor without `review.moderate` is
+refused with `42501`.
+
+### Not fixed here
+
+`app.has_capability()` itself was left alone. Correcting it is a change to the
+foundation authorization surface rather than to the reviews subsystem, and doing it
+inside an unrelated migration would bury a security change in a feature change. It
+should be its own change record, with an assertion that a revoked admin fails.
+
+## Q-32 - A gate failed because its exclusion lived only on one machine
+
+Found: 2026-10-02, when `prettier --check .` began failing on files inside
+`.kilo/worktrees/humane-wallflower/`.
+
+The stray directory is an agent-tool git worktree. It was excluded from git by
+`.git/info/exclude` - a LOCAL, per-clone, uncommitted file. Prettier honours
+`.gitignore` and `.prettierignore`; it does not read `.git/info/exclude`. So git
+considered the directory invisible while prettier walked straight into it and found
+unformatted YAML, JSON and Markdown from a second copy of the repository.
+
+The failure was total: one stray directory made `prettier --check .` report the
+whole repository as unformatted, which reads like a repository-wide problem rather
+than a one-directory one. Worse, the fix is not visible to a reviewer either, since
+`.git/info/exclude` is not in the repository.
+
+Two things made it real rather than theoretical:
+
+- `.kilo/` was not in `.prettierignore`, so nothing in the committed configuration
+  protected the gate from it;
+- the worktree carried its own copy of `AGENTS.md` and `AVERRA_FULL_PLAN/`, so
+  workspace-wide searches matched duplicate files. That was observed directly: an
+  earlier search in this same session returned that tree's files ahead of the real
+  ones.
+
+### Resolution
+
+The worktree was removed (`git worktree remove`, after confirming it had no
+uncommitted changes and sat at main's commit, so nothing was lost), and `.kilo` was
+added to the tracked `.prettierignore`.
+
+The general rule is the Q-30 rule seen from another angle: a gate whose inputs are
+machine-local can fail - or silently pass - for reasons no reviewer can see. An
+exclusion that lives in `.git/info/exclude` on one machine is not an exclusion. If
+something must not be scanned or committed, the exclusion belongs in a tracked file.

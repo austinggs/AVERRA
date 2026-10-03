@@ -26,26 +26,26 @@ migrations and/or source exist AND, where a database invariant is claimed, a pgT
 assertion covers it. This snapshot is the answer to "is everything in
 AVERRA_FULL_PLAN implemented?": no, and here is precisely where the line falls.
 
-| Area                                                              | Phase / Milestone | State                                                                     |
-| ----------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| Repository, CI/CD, observability, contracts, source-of-truth docs | 0 / M1            | COMPLETE                                                                  |
-| Identity, profiles, sessions, navigation                          | 1 / M1            | COMPLETE                                                                  |
-| Reward Engine, ledger, financial invariants, audit                | 2 / M2            | VERIFIED                                                                  |
-| Provider adapters, offers, surveys, callbacks, reconciliation     | 3 / M3            | COMPLETE (no live provider onboarded)                                     |
-| Native tasks, verification, budgets                               | 4 / M4            | VERIFIED                                                                  |
-| Mining Game server state, machines, energy, inventory             | 5 / M5            | COMPLETE (server side only)                                               |
-| Mining Game Three.js shell, asset pipeline, world                 | 5 / M5            | **ABSENT**                                                                |
-| Game expansion: missions, events, achievements, leaderboards      | 6 / M5            | COMPLETE                                                                  |
-| Withdrawals, payout destinations, 15% fee, manual payouts         | 7 / M6            | COMPLETE                                                                  |
-| User Funding deposits, MiniPay manual, token tiers                | 7 / M6            | COMPLETE                                                                  |
-| Daimo deposit/Hurry and automatic payout                          | 7 / M6            | PLANNED (adapter seams only; doc 30 requires provider verification first) |
-| Cash Link operations                                              | 7 / M6            | Data model COMPLETE; provider integration PLANNED                         |
-| Referrals, gamification, advertiser platform                      | 8                 | COMPLETE                                                                  |
-| Fraud/risk, moderation, support, notifications                    | 9                 | VERIFIED                                                                  |
-| Reviews & Community (docs 86, 76 addition, 77 addition)           | 9 / M7            | Data + authority layer COMPLETE (CR-0016); API + UI PLANNED               |
-| Admin Portal UI (doc 87, 20 modules)                              | 9                 | **ABSENT** (RBAC/dual-approval data model COMPLETE)                       |
-| Paid perks, donations, funding spend (doc 83, 75)                 | 8                 | **ABSENT**                                                                |
-| Production hardening: security testing, DR, load, runbooks        | 10 / M7           | PLANNED                                                                   |
+| Area                                                              | Phase / Milestone | State                                                                                  |
+| ----------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| Repository, CI/CD, observability, contracts, source-of-truth docs | 0 / M1            | COMPLETE                                                                               |
+| Identity, profiles, sessions, navigation                          | 1 / M1            | COMPLETE                                                                               |
+| Reward Engine, ledger, financial invariants, audit                | 2 / M2            | VERIFIED                                                                               |
+| Provider adapters, offers, surveys, callbacks, reconciliation     | 3 / M3            | COMPLETE (no live provider onboarded)                                                  |
+| Native tasks, verification, budgets                               | 4 / M4            | VERIFIED                                                                               |
+| Mining Game server state, machines, energy, inventory             | 5 / M5            | COMPLETE (server side only)                                                            |
+| Mining Game Three.js shell, asset pipeline, world                 | 5 / M5            | **ABSENT**                                                                             |
+| Game expansion: missions, events, achievements, leaderboards      | 6 / M5            | COMPLETE                                                                               |
+| Withdrawals, payout destinations, 15% fee, manual payouts         | 7 / M6            | COMPLETE                                                                               |
+| User Funding deposits, MiniPay manual, token tiers                | 7 / M6            | COMPLETE                                                                               |
+| Daimo deposit/Hurry and automatic payout                          | 7 / M6            | PLANNED (adapter seams only; doc 30 requires provider verification first)              |
+| Cash Link operations                                              | 7 / M6            | Data model COMPLETE; provider integration PLANNED                                      |
+| Referrals, gamification, advertiser platform                      | 8                 | COMPLETE                                                                               |
+| Fraud/risk, moderation, support, notifications                    | 9                 | VERIFIED                                                                               |
+| Reviews & Community (docs 86, 76 addition, 77 addition)           | 9 / M7            | Data + authority layer COMPLETE (CR-0016); API + UI PLANNED                            |
+| Admin Portal UI (doc 87, 20 modules)                              | 9                 | **ABSENT** (RBAC/dual-approval data model COMPLETE)                                    |
+| Paid perks, donations, funding spend (doc 83, 75)                 | 8                 | Data + funding-spend commands COMPLETE (CR-0017); API + UI + recurring billing PLANNED |
+| Production hardening: security testing, DR, load, runbooks        | 10 / M7           | PLANNED                                                                                |
 
 ### Cross-cutting gaps, stated plainly
 
@@ -147,3 +147,70 @@ Unlike the reviews layer this one touches money, so it needs the full treatment:
 funding-spend command, entitlement tables, budget caps, and pgTAP coverage. The
 alternative next task is the Three.js shell (doc 17, M5), which is greenfield
 client work with no financial risk.
+
+---
+
+## Session - 2026-10-03 - Paid perks, donations and the funding-spend path (CR-0017)
+
+Date: 2026-10-03
+Agent/owner: AI coding agent (session with the repository owner)
+Phase: 8 - Growth (paid perks / donations, doc 83, with the doc 75 game bridge
+modelled but intentionally empty)
+Status: COMPLETE for the database and command layer; API and UI PLANNED
+Task: Build the second of the three subsystems CR-0016 named as absent - the one
+that moves money - so `USER_FUNDING_SPEND` stops being an enum member naming a
+path the schema did not implement.
+
+Changes made:
+
+- `supabase/migrations/20260930000040_paid_perks_foundation.sql` (new) - four
+  enums, five tables (`paid_perk_products`, `paid_perk_orders`,
+  `paid_entitlements`, `donations`, `funding_spend_events`), RLS, no grants to
+  `anon`/`authenticated`.
+- `supabase/migrations/20260930000041_funding_spend_commands.sql` (new) - four
+  `app_private` commands, three `public` entry points, three `public` read
+  wrappers. 10 functions.
+- `supabase/tests/perks.sql` (new) - 35 assertions.
+- `docs/DISCREPANCIES.md` - Q-33, Q-34, Q-35 (three defects found while building,
+  all fixed and their gates proven by re-injection).
+- `docs/change-records/CR-0017-paid-perks-funding-spend.md` (new).
+
+Tests added/run: `supabase/tests/perks.sql`, 35 assertions. Full suite 12 files /
+248 assertions / 0 failures against the live database (was 213 across 11). Two
+injected defects (an `anon` grant on `list_perk_products`; a donation-keyed
+ledger row) each failed exactly the assertion written for them, by name and
+number, and were restored.
+
+Gates: `check:migrations` 143 functions / 0 errors; `check:grants` 75 public
+functions / 0 errors; `check:data-api` 81 app tables / no direct access;
+`npm test` 176 vitest tests passing.
+
+Financial invariants enforced (see CR-0017 for how each is asserted):
+
+- A purchase can never become an earned reward; the only money writer posts a
+  `USER_FUNDING_SPEND` DEBIT against the `USER_FUNDING` account.
+- A donation is acknowledgement, never a balance; `record_donation` cannot reach
+  a money primitive.
+- Refunds are compensating entries; the original debit is untouched.
+- A duplicate purchase is refused before any write.
+
+Open verification gates:
+
+- Doc 83 API SURFACE routes and doc 10 paid-perks UI do not exist; the database
+  layer is the contract for them (catalogue read, purchase, donation, refund,
+  entitlement/spend history).
+- No recurring billing: `billing_period`/`duration_seconds` are modelled but
+  nothing renews a subscription. Renewal is a money path and needs its own
+  command and change record.
+- Admin refund approval is not modelled (doc 83 does not state it; not invented).
+- `GAME_PURCHASE` is wired but empty, and `review_experience_type` still lacks
+  that value, until the Mining Game economy exists.
+- The Three.js shell (doc 17, M5) is still absent.
+
+Files changed: listed in `docs/change-records/CR-0017-paid-perks-funding-spend.md`.
+
+Next atomic task: **doc 86 - Reviews & Community API routes and UI**, the oldest
+open gate (CR-0016): the database layer is complete and tested, and the API/UI
+work carries no financial authority. The alternatives are the doc 83 paid-perks
+API surface (touches the funding-spend commands, so it needs the money-path
+treatment) and the Three.js shell (greenfield client work, no financial risk).

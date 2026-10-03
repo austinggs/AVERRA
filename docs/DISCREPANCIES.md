@@ -1377,3 +1377,166 @@ The general rule is the Q-30 rule seen from another angle: a gate whose inputs a
 machine-local can fail - or silently pass - for reasons no reviewer can see. An
 exclusion that lives in `.git/info/exclude` on one machine is not an exclusion. If
 something must not be scanned or committed, the exclusion belongs in a tracked file.
+
+## Q-33 - A grants assertion named one function and proved nothing
+
+**Status:** FIXED in `supabase/tests/perks.sql` (CR-0017)
+**Severity:** a test that could not fail on the defect it was written for
+
+### What
+
+The first draft of the anon-EXECUTE assertion in `perks.sql` was:
+
+    select ok(
+      not has_function_privilege(
+        'anon', 'public.list_perk_products(uuid,integer)', 'EXECUTE'
+      ),
+      'an unauthenticated caller cannot execute the perk catalogue read'
+    );
+
+Migration 041 creates SIX functions in the exposed `public` schema:
+`list_perk_products`, `list_my_entitlements`, `list_my_funding_spends`,
+`purchase_with_funding`, `record_donation`, `refund_funding_spend`. The
+assertion named exactly one of them, and only checked the `anon` role.
+
+### Why it matters
+
+This is Q-22's failure mode reached from a new direction, and the difference is
+worth being precise about. Q-22's leak check filtered the population before
+counting it, so its predicate matched nothing and reported `0 bad` as a security
+assurance. This assertion is subtler: the predicate matches a real object, so it
+is not vacuous, and it passes for a real reason. But it would still have passed
+while `record_donation` - a function that creates a donation record a user can
+read - sat wide open to anonymous callers. The breach is the Q-22 breach, one
+function over.
+
+The assertion was not wrong, it was narrow in a way that made its scope
+invisible. Nothing in a green transcript distinguished "anon cannot reach the perk
+catalogue" from "anon cannot reach anything in this subsystem."
+
+### Resolution
+
+Replaced with two population-first counts plus a guard on the population itself:
+
+    select is((select count(*) ... where proname in (all six)), 6::bigint,
+      'the grants population is six public functions, so the checks below see them all');
+
+    select is((select count(*) ... and has_function_privilege('anon', ...)), 0::bigint,
+      'no public function in this subsystem is executable by an unauthenticated caller');
+
+    select is((select count(*) ... and has_function_privilege('authenticated', ...)), 0::bigint,
+      'no public function in this subsystem is executable by a browser session role');
+
+The first of the three exists so that a future rename or a dropped function makes
+the count visible as `have: 5, want: 6` rather than silently shrinking the
+population the other two queries filter. The `authenticated` check is new; the
+original watched only `anon`.
+
+Both bad-count assertions were proven to fail: granting EXECUTE on
+`list_perk_products` to `anon` made exactly the first one report `have: 1, want: 0`.
+
+### The general rule
+
+A security assertion must name its whole population. "Assert X about the thing I
+built" is a different and much weaker claim from "assert X about everything this
+change created", and the difference is invisible in a green transcript.
+
+## Q-34 - A test harness left an injected defect in the committed test file
+
+**Status:** FIXED in `supabase/tests/perks.sql` (CR-0017)
+**Severity:** a false alarm that reads exactly like a live security breach
+
+### What
+
+To prove the Q-33 assertions could fail, two defect-injection runs were launched
+in the same batch against `supabase/tests/perks.sql`. Each harness read the file,
+inserted a defect after `begin;`, ran `node tools/run-db-tests.mjs`, then restored
+the file from the copy it had read at the start.
+
+They ran concurrently. The first wrote its patched copy; the second then read
+that already-patched file as its "original", patched it again, and on restore
+wrote back a file that still contained the first harness's injected
+`grant execute on function public.list_perk_products(uuid, integer) to anon;`.
+
+The database was never affected. Every suite is `begin; ... rollback;`, so the
+grant never outlived its transaction - verified directly against the live project,
+where all six functions report `anon_exec = false`. But the grant sat on line 13
+of the committed test file, and the Q-33 population assertion then failed on a
+completely clean run: `have: 1, want: 0`.
+
+### Why it matters
+
+The symptom is the worst kind. A suite that was green turns red on the next
+unrelated run, and the failing assertion is precisely the one guarding an
+unauthenticated money path. The natural reading is that a real privilege leaked,
+and the correct response to that reading is to go hunting for a breach in the
+grants - which is expensive, and would find nothing.
+
+The harness did report `RESTORED true`, and it was true: it compared the file
+against the wrong copy. A verification that confirms the wrong baseline is worse
+than no verification, because it converts a race into a false assurance.
+
+### Resolution
+
+The injected line was removed and the suite is green at 35/35. The lesson is
+procedural and applies to any harness that mutates a tracked file to prove a
+check fails:
+
+- prove restoration against content you can identify independently (a checksum
+  taken before the batch, not a variable captured inside a racy harness);
+- never run two file-mutating harnesses against the same file concurrently.
+
+### The general rule
+
+A harness that mutates the thing under test can leave the thing under test
+broken, and the breakage it leaves looks exactly like the defect being hunted.
+When a security assertion fails with no code change, suspect the harness before
+suspecting production - and check the file, not just the database.
+
+## Q-35 - Two fixture statements produced result rows instead of assertions
+
+**Status:** FIXED in `supabase/tests/perks.sql` (CR-0017)
+**Severity:** silent loss of coverage
+
+### What
+
+Two statements in `perks.sql` were written as bare selects:
+
+    select app_private.get_or_create_account(...) = app_private.get_or_create_account(...);
+    select app_private.post_ledger_entry(...) is not null;
+
+Both execute correctly - the funding account is created and the 20000-credit
+seed entry is posted, which is what the later purchase assertions depend on. But
+neither is a pgTAP assertion. A bare `select` returns a row of booleans; it
+produces no `ok` line, so the runner counted nothing for either.
+
+The suite ran 33 assertions against `select plan(34)`. The runner reported it
+(`plan is 34 but 33 assertion(s) ran`) rather than passing quietly, which is the
+behaviour it was built for, and that is the only reason this was caught.
+
+### Why it matters
+
+A fixture written as an expression looks like a check. Someone reading the suite
+sees funding established and reasonably concludes it was verified. It was
+established and NOT verified - and had the funding silently failed, the later
+purchase assertions would have failed for a reason pointing at the purchase logic
+rather than at the fixture.
+
+This is the "cannot fail" class again, and it is the third gate in this
+repository to report a reassuring number computed over something other than what
+it claimed to cover: the aliased-column resolver that false-positived, the
+OUT-parameter check that false-negatived, and the grants assertion of Q-33.
+
+### Resolution
+
+Both are now `select ok(...)`, and they assert something real rather than merely
+evaluating: that the account lookup is idempotent (two calls return the same
+account) and that the seed credit actually produced a ledger entry id. The plan
+is 35 and the suite runs 35.
+
+### The general rule
+
+In a pgTAP suite, only a pgTAP function is an assertion. If a statement is a
+fixture, write it so it reads as a fixture - and if it is worth executing, it is
+usually worth asserting, because an unasserted fixture is a place for a silent
+failure to hide.

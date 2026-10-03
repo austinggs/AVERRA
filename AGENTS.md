@@ -107,9 +107,13 @@ state change. See docs/adr/.
   provider conversions). 035 the public entry points for those 26 commands, because
   PostgREST can only resolve an RPC against an exposed schema. 036 the revocation of
   the anon EXECUTE grant on 29 wrappers. Money moves ONLY through `app_private` functions.
-- `supabase/tests/` - pgTAP suites (176 assertions, 10 files). Executed and green as
-  of CR-0015; run them with `npm run test:db`, which needs no Docker. Until then they
-  had NEVER run, and every one of the ten held at least one defect.
+  037-039 campaign billing polarity and the reviews system. 040 the paid perks,
+  entitlements and donations tables; 041 the funding-spend commands and the three
+  bounded read wrappers. A funding SPEND is a USER_FUNDING_SPEND DEBIT and never an
+  earned reward; a donation record is acknowledgement and posts no ledger entry.
+- `supabase/tests/` - pgTAP suites (248 assertions, 12 files). Executed and green as
+  of CR-0017; run them with `npm run test:db`, which needs no Docker. Until then they
+  had NEVER run, and every one of the twelve held at least one defect.
 - `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
   assertions, and on a plan that does not match the count executed.
 - `src/lib/auth/` - verified session and capability guards. Fail-closed.
@@ -188,6 +192,8 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   auth, HTTP surface and Reward Engine addenda.
 - CR-0013 - Removal of every direct `app`-schema Data API access, the bounded
   `public` wrapper surface, and the three missing `app_private` commands.
+- CR-0016 - Reviews and community system (doc 86).
+- CR-0017 - Paid perks, donations and the funding-spend path (doc 83).
 
 ## The risk gate wraps the money path; it is not a second money path
 

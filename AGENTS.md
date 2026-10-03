@@ -303,6 +303,37 @@ migration. `language plpgsql` bodies are not validated until first execution, so
 only SQL-language functions are affected. `npm run check:migrations` enforces
 this ordering.
 
+## AGENTS.md rule: an applied migration is frozen
+
+`supabase_migrations.schema_migrations` records a migration by **version only**. It
+never compares file contents, so a version already recorded is skipped by `db push` -
+correctly, and silently. Editing an applied migration therefore changes the file
+without changing the database, and the push still prints `Finished supabase db push`.
+
+This happened during CR-0027 (see `docs/DISCREPANCIES.md` Q-39). Typecheck, lint,
+`check:migrations`, `check:grants` and every pgTAP assertion passed, because **all of
+them read the file on disk and none of them ask the database what was applied.**
+
+The rule:
+
+- **Never edit a migration that has been applied.** It is the authoritative record of
+  what the database received.
+- **Correct one with a NEW migration.** Leave the applied file byte-identical and
+  `create or replace` the definition forward. Both paths then converge, which is what
+  makes the correction safe in either order.
+- **If the applied file is genuinely wrong as written**, that is a record worth
+  keeping. The original stays as the historical evidence; the fix goes forward.
+
+When a migration touches something the UI reads, verify against the deployed
+database rather than trusting the push output:
+
+```sql
+select proname, prosrc from pg_proc where proname = 'the_function';
+```
+
+A structural lint parses the file. It cannot know what was applied, so it cannot
+detect this class of drift - the `0 bad` empty-population failure one level up.
+
 ## Risk and moderation are separate decision systems
 
 Doc 58 SAFETY BOUNDARY states fraud/risk enforcement and content moderation are

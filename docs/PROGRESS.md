@@ -399,3 +399,89 @@ Next atomic task: **`create_paid_perk_order`**. Migration 041's
 migration ever inserts one, so `PERK_PURCHASE` always raises `unknown order`. The
 entire paid-perks purchase path is dead until that command exists, which makes it
 the next database-authority gap rather than a UI preference.
+
+---
+
+## CR-0026 - Referral reward funding and payment policy
+
+Complete. Migration `20260930000052_referral_reward_funding.sql`.
+
+Decision: the **software** decision and the **money** decision are separated. The
+code states "a referral is worth N500"; it does not state "therefore go spend
+N500,000". Funding is an explicit operator action against an explicit amount.
+
+The `AVERRA_PROMOTIONAL` source ships **inactive with a zero budget**. Nothing in this
+CR applied funds, so no financial liability exists by accident.
+
+---
+
+## CR-0027 - Referral payout orchestration, read model, admin monitoring
+
+Complete. Migrations 053, 054, 055.
+
+The referral programme now has a driver. Before this CR, `pay_referral_reward`
+existed, was proven, and had **no caller** - the same shape of defect as
+`paid_perk_orders` (Q-38).
+
+**Orchestration.** A trigger fires on the transition into `QUALIFIED` and writes a
+`referral.payout_due` outbox event in the same transaction. It does **not** pay.
+Calling the payout inside the qualifying transaction would roll back a legitimate
+qualification whenever the payment failed, which loses the user money and leaves no
+retry, no visibility and no dead letter. The payment runs later in the worker, where
+failures retry with backoff and permanent failures land in `last_error`.
+
+Three independent guards stop a retry paying twice: the outbox dedup index, the
+`REWARDED` early return, and the `referral-reward:<id>` idempotency key. The trigger
+fires only on the _transition_ into `QUALIFIED`, so the recurring
+`qualified_value_minor` updates cannot re-trigger it - asserted directly.
+
+The handler separates two POLICY outcomes (cap reached, programme unfunded), which
+are logged and dropped because retrying cannot change them, from everything else,
+which throws. Both are logged, because a silently dropped event is what the outbox
+exists to prevent.
+
+**Visibility.** `public.get_referral_programme_stats` reports attributed, qualified,
+rewarded, **unpaid qualified**, **cap-hit**, budget remaining, and pending/failed
+payout events. `capHit` is the number that says whether the 100-referral cap is now
+protecting the programme or costing it.
+
+**Funding control.** `public.admin_fund_referral_programme` is capability-gated
+**in SQL**, not in the route, because a route can be bypassed and a function cannot.
+The amount is always explicit; there is no default.
+
+**Read model.** `get_referral_overview` now returns progress toward the threshold and
+a reward history. A user who has referred somebody can see the system working.
+
+**Two defects caught in the presentation layer:**
+
+- `app.reward_state` has **no `SETTLED`** value; the credited state is `AVAILABLE`. A
+  draft compared `reward.state === 'SETTLED'` against the database enum, which is
+  always false, so genuinely available money would have rendered neutral grey.
+  `mapRewardState` owns the mapping now, is unit tested against every enum value, and
+  fails closed on an unknown state.
+- The first draft rescaled amounts to naira. This project renders **raw minor units
+  with the unit**, so a referral would have been the only amount on the product
+  formatted differently.
+
+**Q-39.** Migration 054 was pushed, then edited to add a field. `db push` never
+re-ran it: Supabase records a migration by version and never compares file contents,
+so the file described a function the database did not have and the push still printed
+success. Typecheck, lint, `check:migrations`, `check:grants` and all 409 assertions
+passed, because none of them compare the file to the database. It was caught by
+querying `pg_proc.prosrc` directly. Migration 055 supersedes it. The rule is now in
+AGENTS.md: **an applied migration is frozen; correct it with a new one.**
+
+**Verification:** 19/19 pgTAP suites, **409 assertions**, 0 failures. 245 Vitest
+tests. `check:migrations` 189 functions, `check:grants` 91 public functions,
+`check:data-api` 83 tables, `check:bundle` clean. Typecheck, lint, build and
+`prettier --check` clean. Deployed state confirmed by query: `unit` present; all three
+new or changed functions closed to `anon`.
+
+**Still open:** the programme is unfunded. `50,000,000` kobo awaits explicit
+operator confirmation. `claim_due_referral_payouts` is operator-triggered because no
+scheduler exists yet (docs 60/61/62 unstarted). `paid_perk_products` is still empty,
+so no perk can be bought and no product has been invented.
+
+Next atomic task: **paid-perk catalogue, orders and purchase UI** - the catalogue
+read, order creation, donation, refund, entitlements and spend history - leaving the
+product table empty until real products and prices are supplied.

@@ -1721,3 +1721,54 @@ The `GAME_PURCHASE` funding-spend path has the same shape. Migration 041 models 
 enum value, the target column and the check, and no game purchase path exists -
 that one is a deliberate deferral recorded in CR-0017 rather than an oversight, so
 it does not belong in this entry. It does belong on the same checklist.
+
+---
+
+## Q-39 - An applied migration was edited, and `db push` silently skipped it
+
+**Status:** corrected by migration 055; the process rule is the lasting fix.
+
+**What happened.** Migration `20260930000054_referral_read_model.sql` was pushed to
+the live database. Afterwards, `unit` was added to the body of
+`public.get_referral_overview`. That edit never reached the database.
+
+`supabase_migrations.schema_migrations` records a migration by version and never
+compares file contents. A version already in that table is skipped by `db push`,
+correctly and silently. So the file on disk described a function the database did not
+have. The push printed `Finished supabase db push` and listed no migrations - the
+same clean output as a push that did nothing because there was nothing to do.
+
+**How it was caught.** By asking the database directly rather than trusting the push
+output:
+
+```sql
+select case when prosrc like '%''unit'', coalesce%'
+       then 'UNIT PRESENT' else 'UNIT MISSING' end
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'get_referral_overview';
+```
+
+`UNIT MISSING`. Typecheck, lint, `check:migrations` and `check:grants` all passed, and
+409 pgTAP assertions passed, because none of them compare the file to the database.
+`check:migrations` parses the file; it cannot know what was applied.
+
+**Why this is the same failure as the gates that were built in this repo.** Every
+structural gate in `tools/` reads the file on disk. A gate that never asks the
+database cannot detect drift between the repository and the deployment. That is the
+`0 bad` empty-population failure again, one level up: the checks were not wrong, they
+were answering a narrower question than the one that mattered.
+
+**Correction.** Migration 054 was left byte-identical, so a fresh install still
+produces the intended definition. Migration 055 re-declares the function with
+`create or replace`. Both paths converge, which is what makes the correction safe to
+apply in either order.
+
+**The rule.** A migration is frozen the moment it is applied. It is the authoritative
+record of what the database received, and rewriting it destroys the only evidence of
+that. Correct a deployed migration with a NEW migration, never by editing the applied
+one. If the applied file is genuinely wrong as written, the correction belongs in the
+next migration and the original stays as the historical record of the mistake.
+
+This is the migration-layer instance of a rule already recorded elsewhere in this
+file: the applied artefact and the intended artefact are different things, and only
+the applied one is true.

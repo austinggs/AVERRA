@@ -19,17 +19,33 @@ import { describeError } from '@/lib/observability/errors';
 export type ReferralOverview = {
   code: string | null;
   thresholdMinor: number | null;
-  referrals: Array<{
-    id: string;
-    status: string;
-    reason: string | null;
-    createdAt: string;
-  }>;
+  programmeOpen: boolean;
+  /** What one successful referral is worth. A term of the offer, not a secret. */
+  rewardMinor: number;
+  /** The unit every amount on this page is denominated in. */
+  unit: string;
   counts: {
     total: number;
     qualified: number;
     rewarded: number;
   };
+  referrals: Array<{
+    id: string;
+    status: string;
+    reason: string | null;
+    /** NET qualifying value, so it is always <= the gross that produced it. */
+    qualifiedValueMinor: number;
+    qualifiedAt: string | null;
+    createdAt: string;
+  }>;
+  rewards: Array<{
+    referralId: string;
+    rewardId: string;
+    amountMinor: number;
+    unit: string;
+    state: string;
+    createdAt: string;
+  }>;
 };
 
 export async function getReferralOverview(userId: string): Promise<ReferralOverview> {
@@ -56,14 +72,22 @@ export async function getReferralOverview(userId: string): Promise<ReferralOverv
   const summary = (data ?? {}) as {
     code: string | null;
     thresholdMinor: number | null;
+    programmeOpen: boolean;
+    rewardMinor: number;
+    unit: string;
     counts: { total: number; qualified: number; rewarded: number };
     referrals: ReferralOverview['referrals'];
+    rewards: ReferralOverview['rewards'];
   };
 
   return {
     code: summary.code ?? null,
     thresholdMinor: summary.thresholdMinor ?? null,
+    programmeOpen: summary.programmeOpen ?? false,
+    rewardMinor: summary.rewardMinor ?? 0,
+    unit: summary.unit ?? 'NGN-kobo',
     referrals: summary.referrals ?? [],
+    rewards: summary.rewards ?? [],
     counts: summary.counts ?? { total: 0, qualified: 0, rewarded: 0 },
   };
 }

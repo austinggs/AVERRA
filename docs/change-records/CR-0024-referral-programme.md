@@ -81,11 +81,53 @@ surprise.
 
 The plan count was also wrong again (18, actual 19).
 
+## LAUNCH: the programme is OPEN (migration 049)
+
+```sql
+update app.system_config set value = 'true' where key = 'referral_programme_open';
+select public.backfill_missing_referral_codes();
+```
+
+Applied as a migration rather than run by hand, so there is an audit trail of _when
+the programme opened_. Closing it again is the same statement with `'false'`; codes
+already issued stay valid, because a code that stops working the moment a switch
+moves would be worse than either state.
+
+## Three test-design defects found by opening it
+
+Opening the programme broke three things in the tests, and all three were **my**
+tests asserting on ambient state rather than controlling their own preconditions.
+
+**1. `referrals.sql` asserted that the programme "ships closed."** That is a claim
+about the AMBIENT database, not about the code. Migration 049 made it false and the
+suite failed three assertions - all about the closed path, none of them wrong.
+
+**2. The same suite set its precondition too late.** Moving the flag update to the top
+of the file was not enough: the provisioning trigger fires during the `auth.users`
+fixture INSERT, and the trigger is what reads the flag. The update has to come
+_before_ the fixture, not merely before the assertions.
+
+**3. `growth.sql` broke outright.** It creates a user and then inserts a referral
+code with a known value, which it then selects by in four assertions. The new
+trigger minted a code for that same user during the INSERT, and the manual insert
+failed:
+
+    duplicate key value violates unique constraint "referral_codes_user_unique"
+
+An existing, previously-green suite, broken by a correct change. `growth.sql` now
+closes the flag for its own duration: it tests attribution and anti-abuse with a
+known code, not issuance, and `referrals.sql` covers issuance.
+
+**The general rule, and it is the same one as Q-36 in a different costume: a test
+that reads production state to establish its own precondition is not a test, it is a
+snapshot.** Two suites asserting on the same ambient flag will collide the moment the
+flag moves, and the failure will look like a defect in whichever suite is newer.
+
 ## Verification
 
     suites                16/16 executed
-    assertions            333, failed 0   (was 314 across 15)
-    referrals.sql         19/19
+    assertions            334, failed 0   (was 333)
+    referrals.sql         20/20
     app tables            82 (system_config added)
 
     check:migrations    OK - 174 functions, 0 errors
@@ -101,25 +143,20 @@ provisioning twice mints one code, that attribution alone creates no ledger entr
 
 ## Outstanding — READ THIS
 
-**The programme is CLOSED and the referral page will still say so.** Opening it is a
-production decision, not an implementation one, so I did not take it unilaterally:
+**Attribution is complete. The paying half is not.** `qualify_referral` and
+`reward_referral` are still never called. Every referral sits at ATTRIBUTED forever —
+correct, but nobody earns.
 
-```sql
-update app.system_config set value = 'true' where key = 'referral_programme_open';
-select public.backfill_missing_referral_codes();
-```
+Three decisions are needed before that can be built, and I have deliberately not
+invented any of them:
 
-Say the word and I will run both.
-
-**`qualify_referral` and `reward_referral` are still never called.** Attribution is
-complete; the paying half is not. Something must observe qualifying activity and drive
-qualification, and doc 39 requires a **server-recorded qualifying event**. Until that
-exists, every referral sits at ATTRIBUTED forever — correct, but it means nobody
-earns. This is the next piece, and it is a money path.
-
-**`qualification_threshold_minor` defaults to 0**, which would qualify on the first
-qualifying event. Doc 39 says thresholded earnings with no number given; a real figure
-needs setting.
+1. **What counts as "qualifying activity"?** Doc 39 says "verified activity or
+   thresholded earnings" without defining either. Something must observe the
+   referee's earnings and call `qualify_referral` with a server-recorded event id.
+2. **What is the referral reward worth?** `reward_referral` takes an amount and a
+   unit. Doc 39 mentions caps but no figure.
+3. **`qualification_threshold_minor` defaults to 0**, so a referral would qualify on
+   the very first qualifying event. A real number is needed.
 
 **No late attribution.** By design, per doc 39 — but a grace window after signup would
 be a change record, not a tweak.
@@ -128,7 +165,9 @@ be a change record, not a tweak.
 
     supabase/migrations/20260930000047_referral_programme.sql   new (5 functions)
     supabase/migrations/20260930000048_referral_code_entropy.sql  new (2 functions)
-    supabase/tests/referrals.sql                               new (19 assertions)
+    supabase/migrations/20260930000049_open_referral_programme.sql  new
+    supabase/tests/referrals.sql                               new (20 assertions)
+    supabase/tests/growth.sql                                  fixture made hermetic
     src/app/(auth)/actions.ts                                  referral capture
     src/app/(auth)/sign-up/SignUpForm.tsx                      ?ref= prefill
     src/app/(app)/referrals/page.tsx                           invite link

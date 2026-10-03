@@ -10,9 +10,20 @@
 
 begin;
 
--- 19 assertions, counted mechanically against this file (12 is, 5 ok, 2 throws_ok)
--- rather than estimated. An earlier draft declared 18.
-select plan(19);
+-- 20 assertions, counted mechanically against this file (13 is, 5 ok, 2 throws_ok)
+-- rather than estimated. Earlier drafts declared 18 and 19.
+select plan(20);
+
+-- THE PRECONDITION IS SET FIRST, BEFORE ANY FIXTURE.
+--
+-- Ordering matters and got this wrong twice. The first attempt put this update after
+-- the auth.users insert, and the provisioning TRIGGER fired during the insert - while
+-- the ambient flag was still whatever the database happened to hold. The trigger is
+-- what reads the flag, so setting it after the fixture is too late.
+--
+-- The second attempt moved the update up here but kept the old explanatory comment
+-- underneath the fixture, where it claimed something the code above no longer did.
+update app.system_config set value = 'false' where key = 'referral_programme_open';
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -25,19 +36,35 @@ insert into auth.users (
    'authenticated', 'authenticated', 'pgtap-referee@example.invalid', 'x',
    now(), now(), now(), '{"display_name":"Referee"}'::jsonb);
 
--- The flag starts CLOSED. Everything about issuance is asserted against both states,
--- because a programme that mints codes before it is announced is a product bug and
--- one that never mints them is the bug this migration fixes.
+-- -----------------------------------------------------------------------------
+-- The flag, asserted against a value THIS SUITE set
+-- -----------------------------------------------------------------------------
+-- It used to assert that the programme "ships closed", which meant depending on
+-- the AMBIENT database value. Migration 049 opened the flag and the suite failed three
+-- assertions about the closed path - none of them wrong.
+--
+-- A test that reads production state to establish its own precondition is not a
+-- test, it is a snapshot. The flag is set above, before any fixture, so this suite
+-- passes whether the programme is open or closed in any given environment.
+
 select is(
   app_private.system_config_bool('referral_programme_open', true),
   false,
-  'the referral programme ships CLOSED, even when asked for a default of true'
+  'the flag is readable, and a present value wins over the caller''s default'
 );
 
 select is(
   app_private.system_config_bool('a_flag_that_does_not_exist', true),
   true,
   'a MISSING key returns the caller''s default rather than raising'
+);
+
+-- The default when the flag is absent is what a fresh deployment relies on before
+-- any migration seeds it, so it is asserted explicitly.
+select is(
+  app_private.system_config_bool('a_flag_that_does_not_exist', false),
+  false,
+  'a MISSING key returns false by default: an absent flag is a closed flag'
 );
 
 -- -----------------------------------------------------------------------------

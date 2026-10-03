@@ -28,7 +28,21 @@ select has_table('app', 'campaign_conversions', 'campaign conversions exist');
 --
 -- A real auth.users row is required because referral_codes.user_id REFERENCES
 -- auth.users(id). Everything in this file is rolled back.
+--
+-- THE REFERRAL PROGRAMME IS CLOSED FOR THIS FIXTURE, AND IT MUST BE SET BEFORE THE
+-- INSERT. Migrations 044/047 added a trigger that issues a referral code whenever an
+-- auth.users row appears while `referral_programme_open` is true. Once the programme
+-- opened (migration 049), that trigger fired during the insert below and the manual
+-- insert on the next line failed:
+--
+--     duplicate key value violates unique constraint "referral_codes_user_unique"
+--
+-- This suite tests attribution and anti-abuse with a KNOWN code, not issuance -
+-- issuance is covered by referrals.sql. Closing the flag for the duration keeps this
+-- fixture deterministic and stops the two suites fighting over the same row.
 -- ---------------------------------------------------------------------------
+update app.system_config set value = 'false' where key = 'referral_programme_open';
+
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at

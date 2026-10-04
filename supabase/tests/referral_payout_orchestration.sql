@@ -9,9 +9,29 @@
 
 begin;
 
--- 19 assertions, counted mechanically against this file (13 is, 6 ok) rather than
--- estimated. An earlier draft declared 12.
-select plan(19);
+-- 23 assertions, counted mechanically against this file (13 is, 10 ok) rather than
+-- estimated. An earlier draft declared 12, then 19.
+select plan(23);
+
+-- THE COMMITTED BUDGET BASELINE, CAPTURED FIRST
+--
+-- Section 5 of this suite funds the programme so a payout can actually happen. That
+-- funding is inside this suite's transaction, so any later assertion reading the
+-- budget sees baseline + 50000000 rather than the committed figure.
+--
+-- An earlier draft of this file asserted "budget = 50000000" and "one funding audit
+-- row" AFTER doing that funding, and correctly failed with 100000000 and 2 - not
+-- because the database was wrong, but because the assertions were reading their own
+-- transaction. The baseline is therefore captured here, before anything mutates it,
+-- which also makes the assertion independent of the order of the sections below.
+create temporary table t_baseline on commit drop as
+  select
+    (select budget_total_minor from app.reward_sources where source_type = 'AVERRA_PROMOTIONAL')
+      as budget_total,
+    (select budget_remaining_minor from app.reward_sources where source_type = 'AVERRA_PROMOTIONAL')
+      as budget_remaining,
+    (select count(*) from app.audit_events where action = 'referral.budget_funded')
+      as funding_audits;
 
 update app.system_config set value = '100' where key = 'maximum_rewards_per_referrer';
 
@@ -213,6 +233,44 @@ select is(
    where rf.id = (select id from t_ref)),
   1,
   'and exactly one reward exists after the whole sequence'
+);
+
+-- -----------------------------------------------------------------------------
+-- 7. The approved budget is deployed, and cannot produce a partial payout
+-- -----------------------------------------------------------------------------
+--
+-- These read COMMITTED state, not the rolled-back transaction, because the funded
+-- budget is an operator decision that lives in the database rather than in a test.
+--
+-- THE DIVISIBILITY ASSERTION IS THE ONE THAT MATTERS. `pay_referral_reward` draws
+-- the FULL configured reward or refuses; it never pays part of one. If the budget
+-- were not an exact multiple of the reward, the final payout would fail rather than
+-- pay a fraction, and a user whose referral genuinely qualified would be left
+-- unpaid with nothing in the logs to explain why. 50,000,000 divides by 50,000
+-- exactly, so the programme funds 1,000 payouts and then correctly refuses the next.
+
+select ok(
+  (select budget_total > 0 and budget_total = budget_remaining and budget_remaining > 0
+     from t_baseline),
+  'the referral programme was funded, active, and wholly unspent at the start of this suite'
+);
+
+select is(
+  (select budget_total::text from t_baseline),
+  '50000000',
+  'the funded budget is the 50,000,000 kobo the owner approved. Changing it is a DECISION, not a fix: update this assertion deliberately.'
+);
+
+select ok(
+  (select budget_total % app_private.system_config_bigint('referral_reward_minor', 1) = 0
+     from t_baseline),
+  'the budget is an exact multiple of the reward, so no payout can be left partial'
+);
+
+select is(
+  (select funding_audits::int from t_baseline),
+  1,
+  'exactly ONE funding audit row exists: the additive funding function ran once, not twice'
 );
 
 select * from finish();

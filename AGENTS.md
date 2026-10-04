@@ -479,6 +479,12 @@ Rules:
 - That gate pairs each function declaration with the next `$$;` and fails on an
   unclosed function, an orphan close, or a duplicated tail. Count-based checks
   are not sufficient.
+- **`do $$ ... $$;` is a valid block, not a function.** The gate models it as an
+  opening construct that pairs with its own `$$;` and carries the same
+  `if`/`end if` balance check. Added for migration 056, which guards a money
+  operation inside an anonymous block; the gate previously reported its `$$;` as an
+  orphan. Do NOT "fix" this by ignoring a `$$;` when nothing is open - that check is
+  what catches the truncated-function defect the tool exists for (Q-11).
 - A generated column expression may only reference columns of its OWN row. Referencing
   another table's column fails at CREATE TABLE with 42703; use a trigger.
 - An aggregate `filter (where alias.col ...)` requires `alias` to be bound by a

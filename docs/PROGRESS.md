@@ -480,7 +480,126 @@ new or changed functions closed to `anon`.
 **Still open:** the programme is unfunded. `50,000,000` kobo awaits explicit
 operator confirmation. `claim_due_referral_payouts` is operator-triggered because no
 scheduler exists yet (docs 60/61/62 unstarted). `paid_perk_products` is still empty,
-so no perk can be bought and no product has been invented.
+so no perk can be bought and no product has been invented. (The funding was approved
+and applied in CR-0028, below.)
+
+---
+
+## CR-0028 - Fund the referral programme at 50,000,000 kobo
+
+- **Status:** Complete
+- **Date:** 2026-10-04
+- **Authority:** the owner's explicit confirmation of this amount.
+- **Closes:** the money half of CR-0026, which deliberately shipped unfunded.
+- **Authorities:** 39_REFERRAL_SYSTEM.txt, law 10 (traceable funding), law 27
+  (attributability), law 56 (funding separate from user funding).
+
+## The decision
+
+    50,000,000 kobo  (NGN-kobo)  =  N500,000
+    reward per referral          =      500 kobo
+    -> 1,000 payouts, exactly
+
+The division is exact. `pay_referral_reward` draws the **full** configured reward or
+refuses; it never pays part of one. An inexact budget would leave the final payout
+failing rather than paying a fraction, with a user whose referral genuinely qualified
+left unpaid. 50,000,000 is asserted by pgTAP to divide evenly, so that cannot happen
+silently.
+
+Migration 056 applies it. `budget_total_minor = 50000000`,
+`budget_remaining_minor = 50000000`, `is_active = true`, one `audit_events` row.
+
+## The migration is GUARDED, because the funding function is ADDITIVE
+
+`fund_promotional_reward_source` does `budget_total_minor + p_budget_minor`. It refuses
+only zero or negative. Calling it twice with this amount produces a **100,000,000**
+budget - double the approved liability - with no error and no warning.
+
+A plain `select app_private.fund_promotional_reward_source(50000000, null);` would be
+therefore correct exactly once and dangerous every time after: a fresh database
+applies it properly, and any replay or manual re-run silently doubles the programme.
+
+Migration 056 instead:
+
+- funds only when the source is **unfunded**, and
+- tops up only by the **shortfall**, so a smaller existing budget lands on the
+  approved figure rather than exceeding it, and
+- `raise notice`s what it skipped.
+
+Re-running the exact block against the live database was verified: the budget stayed at
+50,000,000 and the audit count stayed at 1.
+
+**No actor id is recorded.** A migration is not performed by a signed-in user, and
+attributing it to one would put a false identity in `audit_events` (law 27). The
+decision is attributable through the migration version and the commit, which is a
+stronger record than a user id.
+
+**Top-ups are not done by editing the constant.** The version is already applied, so
+that would silently do nothing - Q-39 from the other direction. Later funding goes
+through `public.admin_fund_referral_programme`, which is capability-gated and records
+the actor.
+
+## Q-40 - `check:migrations` failed valid SQL
+
+Migration 056 opens with `do $$ ... $$;`, an anonymous PL/pgSQL block. PostgreSQL
+accepted it; the gate rejected it as `orphan $$; with no open function`. The gate
+paired every `$$;` with a function declaration and had no model for a block.
+
+The obvious repair - ignore a `$$;` when nothing is open - would have deleted the
+orphan check that catches the truncated-function defect the tool exists for (Q-11),
+turning a false positive into a false negative. Instead a `do $$` now opens a tracked
+block of its own kind, pairs with its `$$;`, and carries the same `if`/`end if`
+balance check.
+
+Verified with **twelve injected cases**, each written to a real migration file, run,
+and restored byte-identically: valid DO blocks pass, and a genuine orphan, an unclosed
+function, a missing `end if;` inside a block, an unclosed block, and a function
+unclosed before a DO block all still fail.
+
+## Two tests were coupled to a production data value
+
+Funding broke 9 assertions across two suites. Neither was a defect in the payout path.
+
+`referral_reward.sql` asserted `budget = 0` and `is_active = false` directly from the
+deployed source. That was true while the programme was unfunded by design, and became
+false the moment it was funded. The invariant actually worth testing is not "the
+deployment is unfunded" but:
+
+    an unfunded programme REFUSES to pay, and creates no reward  (law 10)
+
+so the suite now establishes that precondition explicitly, inside its own transaction,
+and is independent of the deployed funding decision. A new assertion confirms a payout
+refused for want of budget leaves the referral **QUALIFIED, not REJECTED**, so it can
+be paid later without recomputing the qualification.
+
+My own new assertions failed first for a self-inflicted reason: they read "committed"
+budget state _after_ the same suite had funded +50,000,000 in its own transaction, and
+correctly reported 100,000,000 and 2 audit rows. The baseline is now captured into a
+temp table before anything mutates it, which also makes the assertions order
+independent. I briefly suspected the pooled runner was leaking transactions across
+suites; it was not - session-mode pooler, one child, a fresh `Client` per suite. The
+defect was mine.
+
+The live database was verified unchanged after two consecutive full runs: 50,000,000 /
+50,000,000 / active, one funding audit row, zero referrals, zero rewards.
+
+## Verification
+
+- 19/19 pgTAP suites, **414 assertions**, 0 failures
+- 245 Vitest tests, 14 files
+- `check:migrations` 189 functions, `check:grants` 91 public functions,
+  `check:data-api` 83 tables, `check:bundle` clean
+- typecheck, lint, build, `prettier --check` clean
+- Deployed state confirmed by direct query after two consecutive test runs
+- Guard proven by re-executing the migration block: budget and audit count unchanged
+
+## Still open
+
+- No scheduler exists, so `claim_due_referral_payouts` remains operator-triggered. Until
+  it runs, a referral qualified while the worker was down waits for it. The qualifying
+  transaction is no longer at risk either way.
+- `paid_perk_products` is still empty; no perk can be purchased and none has been
+  invented.
 
 Next atomic task: **paid-perk catalogue, orders and purchase UI** - the catalogue
 read, order creation, donation, refund, entitlements and spend history - leaving the

@@ -1772,3 +1772,56 @@ next migration and the original stays as the historical record of the mistake.
 This is the migration-layer instance of a rule already recorded elsewhere in this
 file: the applied artefact and the intended artefact are different things, and only
 the applied one is true.
+
+---
+
+## Q-40: `check:migrations` reported valid `do $$ ... $$;` as an orphan `$$;`
+
+**Status:** corrected in `tools/check-migrations.mjs`.
+
+**What happened.** Migration 056 opens with an anonymous PL/pgSQL block - `do $$` /
+`$$;` - to guard a money operation. That is valid SQL and PostgreSQL applied it
+without complaint. `check:migrations` failed it:
+
+    20260930000056_fund_referral_programme.sql     fns= 0 FAIL (1)
+        - orphan $$; with no open function (line 97)
+
+The gate paired every `$$;` with a `create or replace function` declaration. It had no
+model for a block that is neither, so it reported the closer of a correctly balanced
+block as an unmatched delimiter.
+
+**The fix, and why it was not a suppression.** The tempting repair is to ignore a
+`$$;` when nothing is open. That deletes the orphan check, and the orphan check is
+what catches the truncated-function-plus-duplicated-tail defect this tool exists for
+(Q-11) - the failure the tool was written to detect. Silencing it would have turned a
+false positive into a false negative and made the gate worse than useless.
+
+Instead a `do $$` opens a tracked block of its own kind, pairs with the next `$$;`,
+and carries the same `if`/`end if` balance check a function body does. A genuine
+`$$;` with nothing open is still an error.
+
+**Proved both directions, twelve injected cases.** A gate that has never been shown to
+fail proves nothing, so each case was injected into a real migration file, the gate
+re-run, and the file restored byte-identically:
+
+| Case                                     | Expected | Result |
+| ---------------------------------------- | -------- | ------ |
+| valid `do $$ ... $$;`                    | OK       | ok     |
+| genuine `$$;`, nothing open              | FAIL     | FAIL   |
+| unclosed function                        | FAIL     | FAIL   |
+| `if`/`end if;` missing inside a DO block | FAIL     | FAIL   |
+| unclosed DO block                        | FAIL     | FAIL   |
+| two-line `do` / `$$` form, balanced      | OK       | ok     |
+| two-line form, `end if;` missing         | FAIL     | FAIL   |
+| DO block following a closed function     | OK       | ok     |
+| function unclosed, then a DO block       | FAIL     | FAIL   |
+
+One case initially reported WRONG - and the fault was in the fixture, not the gate:
+it was labelled "missing `end if`" and contained one. That is the third time in this
+repository a proof harness, not the production code, was the thing that was wrong.
+
+**The general point.** `check:migrations` parses files. It cannot know whether a
+construct is legal SQL, so every construct PostgreSQL accepts that the tool had not
+previously seen is a candidate for a false positive. The response to a false positive
+is to teach the gate the construct and prove the new behaviour both ways - never to
+widen an ignore list, which converts a loud false positive into a silent hole.

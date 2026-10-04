@@ -11,7 +11,7 @@ begin;
 
 -- 28 assertions, counted mechanically against this file (17 is, 8 ok, 3 throws_ok)
 -- rather than estimated. Earlier drafts declared 16, 24 and 26.
-select plan(28);
+select plan(29);
 
 update app.system_config set value = '50000' where key = 'referral_reward_minor';
 update app.system_config set value = '100' where key = 'maximum_rewards_per_referrer';
@@ -52,20 +52,44 @@ select ok(
 );
 
 -- -----------------------------------------------------------------------------
--- 1. The programme ships UNFUNDED
+-- 1. An unfunded programme refuses to pay rather than creating an unbacked reward
 -- -----------------------------------------------------------------------------
+--
+-- THIS SECTION USED TO ASSERT THE SHIPPED STATE.
+--
+-- It read "budget = 0" and "is_active = false" directly from the deployed source,
+-- which was correct while the programme was unfunded by design (CR-0026) and became
+-- wrong the moment the owner funded it (migration 056). Seven assertions here then
+-- failed for one reason: not a defect in the payout path, but a test coupled to a
+-- production data value.
+--
+-- The invariant worth keeping is not "the deployment is unfunded". It is
+--
+--     an unfunded programme REFUSES to pay, and creates no reward  (law 10)
+--
+-- which is a property of the payment path and must hold whatever the budget is. So
+-- the precondition is established HERE, explicitly, inside this transaction. The
+-- suite is now independent of the deployed funding decision - which is also what
+-- stops it from having to be rewritten every time the owner funds or tops up.
+--
+-- The deployed budget itself is asserted in referral_payout_orchestration.sql, from
+-- a baseline captured before that suite funds anything.
+
+update app.reward_sources
+set budget_total_minor = 0, budget_remaining_minor = 0, is_active = false
+where source_type = 'AVERRA_PROMOTIONAL';
 
 select is(
   (select s.budget_remaining_minor::int from app.reward_sources s
    where s.source_type = 'AVERRA_PROMOTIONAL'),
   0,
-  'the promotional source exists with a ZERO budget: this migration funds nothing'
+  'CONTROL-GATE: the programme is deliberately drained to a ZERO budget for this section'
 );
 
 select is(
   (select s.is_active from app.reward_sources s where s.source_type = 'AVERRA_PROMOTIONAL'),
   false,
-  'and it is INACTIVE, so grant_reward still refuses to pay'
+  'and deactivated, so grant_reward refuses to pay'
 );
 
 select throws_ok(
@@ -87,6 +111,15 @@ select is(
    join app.referrals rf on rf.reward_id = r.id),
   0,
   'and still NO reward exists after a refused payout: law 10 holds'
+);
+
+-- AND THE REFERRER IS NOT SENT BACK TO ATTRIBUTED. A payout that cannot be funded is
+-- a policy state, not a rejection: the referral genuinely qualified and stays
+-- qualified, so it can be paid later without the qualification being recomputed.
+select is(
+  (select r.status::text from app.referrals r where r.id = (select id from t_ref)),
+  'QUALIFIED',
+  'a payout refused for lack of budget leaves the referral QUALIFIED, not REJECTED'
 );
 
 -- -----------------------------------------------------------------------------

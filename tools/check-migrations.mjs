@@ -278,27 +278,61 @@ function checkFunctionBlocks(lines) {
   let ifCount = 0;
   let endIfCount = 0;
 
+  // A DO BLOCK IS NOT A FUNCTION, AND THE PAIRING MUST KNOW THAT
+  //
+  // `do $$ ... $$;` is valid PL/pgSQL: an anonymous block executed for its effects.
+  // Migration 056 uses one to guard a money operation, and this check reported its
+  // `$$;` as an "orphan $$; with no open function" - a false positive on correct SQL.
+  //
+  // It matters that this was fixed properly rather than by loosening the rule. A
+  // blanket "ignore `$$;`" would delete the orphan check that catches the truncated-
+  // function defect this tool exists for (Q-11), which is the exact over-correction
+  // AGENTS.md warns about. So a DO block opens and closes the same way a function
+  // does, carries the same `if`/`end if` balance check, and a genuine `$$;` with
+  // nothing open is still an error.
+  let openKind = null; // 'function' | 'do' | null
+
+  const label = () => (openKind === 'do' ? 'do block' : `function ${currentName}`);
+
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
 
     const decl = trimmed.match(/^create or replace function\s+([\w.]+)/);
     if (decl) {
       if (open) {
-        errors.push(`unclosed function ${currentName} before ${decl[1]} (line ${i + 1})`);
+        errors.push(`unclosed ${label()} before ${decl[1]} (line ${i + 1})`);
       }
       open = true;
+      openKind = 'function';
       currentName = decl[1];
       ifCount = 0;
       endIfCount = 0;
     }
 
+    // `do $$`, `DO $$`, and the two-line form `do` / `$$`.
+    const doOpen = trimmed.match(/^do\s*\$\$/i);
+    const doOpenSplit = /^(do)\s*$/i.test(trimmed);
+    if (doOpen || doOpenSplit) {
+      if (open) {
+        errors.push(`unclosed ${label()} before do block (line ${i + 1})`);
+      }
+      open = true;
+      openKind = 'do';
+      currentName = null;
+      ifCount = 0;
+      endIfCount = 0;
+      // The two-line form continues on the next line; the body begins there.
+      if (doOpenSplit) continue;
+    }
+
     if (/^\$\$;/.test(trimmed)) {
       if (!open) {
-        errors.push(`orphan $$; with no open function (line ${i + 1})`);
+        errors.push(`orphan $$; with no open function or do block (line ${i + 1})`);
       } else if (ifCount !== endIfCount) {
-        errors.push(`${currentName}: unbalanced if/end if (${ifCount} if, ${endIfCount} end if)`);
+        errors.push(`${label()}: unbalanced if/end if (${ifCount} if, ${endIfCount} end if)`);
       }
       open = false;
+      openKind = null;
       currentName = null;
       continue;
     }
@@ -310,7 +344,7 @@ function checkFunctionBlocks(lines) {
   }
 
   if (open) {
-    errors.push(`unclosed function ${currentName} at end of file`);
+    errors.push(`unclosed ${label()} at end of file`);
   }
 
   return errors;

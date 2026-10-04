@@ -13,7 +13,7 @@ import { cx } from './Card';
 export interface TabItem {
   href: string;
   label: string;
-  icon: 'home' | 'earn' | 'game' | 'tasks' | 'wallet' | 'bell' | 'referral' | 'help';
+  icon: 'home' | 'earn' | 'game' | 'tasks' | 'wallet' | 'bell' | 'referral' | 'sparkles' | 'help';
   /** Optional count badge, e.g. unread notifications. */
   badge?: number;
 }
@@ -39,6 +39,9 @@ const ICONS: Record<TabItem['icon'], React.ReactNode> = {
   ),
   referral: (
     <path d="M16.5 20v-1.5a3.5 3.5 0 0 0-3.5-3.5H7a3.5 3.5 0 0 0-3.5 3.5V20M10 11.5a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5ZM20.5 20v-1.5a3.5 3.5 0 0 0-2.625-3.386M16.25 4.114a3.75 3.75 0 0 1 0 7.272" />
+  ),
+  sparkles: (
+    <path d="M12 3.5 13.6 8 18 9.6 13.6 11.2 12 15.7 10.4 11.2 6 9.6 10.4 8 12 3.5ZM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" />
   ),
   help: (
     <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-1.5-13.5a1.6 1.6 0 1 1 2.3 1.45c-.6.3-.8.7-.8 1.3v.25m0 3.5h.01" />

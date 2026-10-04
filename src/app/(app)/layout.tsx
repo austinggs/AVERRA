@@ -18,6 +18,7 @@ const TABS: TabItem[] = [
   { href: '/wallet', label: 'Wallet', icon: 'wallet' },
   { href: '/notifications', label: 'Alerts', icon: 'bell' },
   { href: '/referrals', label: 'Refer', icon: 'referral' },
+  { href: '/perks', label: 'Perks', icon: 'sparkles' },
   { href: '/support', label: 'Support', icon: 'help' },
 ];
 

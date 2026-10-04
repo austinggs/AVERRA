@@ -334,6 +334,24 @@ select proname, prosrc from pg_proc where proname = 'the_function';
 A structural lint parses the file. It cannot know what was applied, so it cannot
 detect this class of drift - the `0 bad` empty-population failure one level up.
 
+## Read the enum before you map it to a screen
+
+Three times now, a presentation string has been compared against a database enum that
+does not contain it: `reward.state === 'SETTLED'` (CR-0027), `paid_order_status.PAID`
+and a response literal of `'PAID'`/`'CONFIRMED'` (CR-0029). Each comparison is always
+false, so nothing throws, and each sat next to fail-closed handling that made it look
+deliberate. The visible result in CR-0029 was **paid money rendering as unpaid**.
+
+```sql
+select unnest(enum_range(null::app.paid_order_status));
+```
+
+Read that before writing a display map. Do not infer values from the column name or
+from what the word would naturally be called - `SETTLED` and `PAID` are both words a
+careful engineer reaches for and neither exists. Never report a state a handler did not
+actually read back, and pin the real enum in a test that has been shown to fail.
+See `docs/DISCREPANCIES.md` Q-41.
+
 ## Risk and moderation are separate decision systems
 
 Doc 58 SAFETY BOUNDARY states fraud/risk enforcement and content moderation are

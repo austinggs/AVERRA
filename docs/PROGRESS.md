@@ -601,6 +601,67 @@ The live database was verified unchanged after two consecutive full runs: 50,000
 - `paid_perk_products` is still empty; no perk can be purchased and none has been
   invented.
 
-Next atomic task: **paid-perk catalogue, orders and purchase UI** - the catalogue
-read, order creation, donation, refund, entitlements and spend history - leaving the
-product table empty until real products and prices are supplied.
+---
+
+## CR-0029 - Paid perks: API, purchase flow and UI
+
+Complete. No SQL was added; CR-0017 and CR-0018 already shipped the whole database
+contract and this CR is the missing application layer over it.
+
+**Routes.** `GET`/`POST /api/perks`, `POST /api/perks/orders/[orderId]/purchase`,
+`POST /api/perks/orders/[orderId]/cancel`, `POST /api/donations`. **UI.** `/perks`
+with the catalogue, entitlements, order history and spend history, plus the
+two-step purchase flow.
+
+**Law 47 is enforced structurally, not by convention.** Creating an order takes a
+product **code and no amount**; confirming takes an **order id and no amount**, and
+the tendered figure is read back from the order the database priced.
+`purchase_with_funding` then independently re-reads the order and the product and
+refuses if the three disagree. Cancelling is not refunding: `cancel_paid_perk_order`
+refuses anything not `PENDING`, and `refund_funding_spend` is actor-gated, so **there
+is deliberately no user-facing refund route**.
+
+Measured end to end against the live database in a rolled-back transaction: create →
+`PENDING` at 75,000; purchase → `FULFILLED`, spend `PERK_PURCHASE`, entitlement
+`ACTIVE`; replayed idempotency key → the same order.
+
+**Q-41 - a status word invented where a database value belonged.** `paid_order_status`
+has no `PAID`; it is PENDING, CONFIRMED, FULFILLED, REFUNDED, CANCELLED. The display
+map had `PAID → brand`, so every genuinely paid order would have missed the map,
+fallen through to the fail-closed branch and rendered **neutral grey reading
+"status: confirmed"** — paid money displayed as unpaid. The same map invented a
+`PERK_REFUND` purpose that does not exist, and the purchase response returned a
+literal `PAID`, then `CONFIRMED`, when a purchase actually leaves the order
+`FULFILLED`.
+
+That is the third instance of one defect, after CR-0027's `reward.state ===
+'SETTLED'`. Each comparison is always false so nothing throws, and each sat beside
+fail-closed handling that made it look deliberate. The response now returns **no
+status at all**, because `purchase_with_funding` returns a spend row and not the
+order, so the handler never read one.
+
+`ORDER_STATUSES` is exported, pinned to the real enum, and three tests assert the map
+covers every real status and invents none. The `PAID` mapping was re-injected and the
+suite re-run to prove it fails: 2 failed, restored, 22/22 pass, file byte-identical.
+
+**Other honesty decisions.** No product is seeded and the empty state says so.
+`describeBilling` returns `recurring: false` for every input because nothing renews a
+subscription, and affirmatively denies the renewal claim. An entitlement is not money
+and is deliberately not mapped through `MoneyState`. `is_refund` makes a refund a
+credit, never a second debit. Amounts are raw minor units like every other surface.
+
+**Also fixed:** the product-code schema was `min(2).max(64)`, which accepted uppercase
+and an overflow that `paid_perk_products_code_shape` (`^[a-z0-9_]{2,60}$`) rejects
+with a raw 23514. Path segments are now UUID-validated rather than cast.
+
+**Verification:** 19/19 pgTAP suites, 414 assertions, 0 failures. 267 Vitest tests
+(was 245). `check:migrations` 189 fns, `check:grants` 91 public fns, `check:data-api`
+83 tables, `check:bundle` clean. Typecheck, lint, build, prettier clean.
+
+**Still open:** `paid_perk_products` is empty, so nothing can be bought until real
+products and prices exist — the path is proven and the catalogue is the only missing
+input. No subscription renewal. Refunds have no admin UI yet.
+
+Next atomic task: **review Storage policies and validated media upload**, then the
+moderation console. `attach_review_comment_media` records metadata for an object
+nothing uploads, which is Q-38's shape again.

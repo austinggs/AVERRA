@@ -1825,3 +1825,48 @@ construct is legal SQL, so every construct PostgreSQL accepts that the tool had 
 previously seen is a candidate for a false positive. The response to a false positive
 is to teach the gate the construct and prove the new behaviour both ways - never to
 widen an ignore list, which converts a loud false positive into a silent hole.
+
+---
+
+## Q-41 - a status word was invented where a database value belonged
+
+**Status:** corrected in CR-0029; the pattern is now a rule.
+
+This is the third occurrence in this repository of a presentation-layer string compared
+against a database enum that does not contain it.
+
+| Where             | Invented                                      | Reality                                                    | Visible effect                                            |
+| ----------------- | --------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| CR-0027 referrals | `reward.state === 'SETTLED'`                  | `reward_state` has `AVAILABLE`, never `SETTLED`            | Available referral money rendered neutral grey            |
+| CR-0029 perks     | `paid_order_status.PAID`                      | enum is PENDING, CONFIRMED, FULFILLED, REFUNDED, CANCELLED | Paid orders rendered as **unpaid**                        |
+| CR-0029 perks     | response literal `'PAID'`, then `'CONFIRMED'` | a purchase leaves the order `FULFILLED`                    | The API told the client a status the database never wrote |
+
+**Why it keeps happening.** The comparison is always false, so nothing throws. Worse,
+the surrounding code is normally _fail-closed_ - an unrecognised status falls through to
+a neutral default - and a fail-closed default looks precisely like correct defensive
+programming. The result is a green build, a passing suite, and a screen that quietly
+misstates a financial state. In the perks case that meant paid money displayed as
+unpaid, in a codebase whose central rule is that green means credited money.
+
+**The rule.** Before mapping any database enum to a UI, read the enum from the
+migrations:
+
+```sql
+select unnest(enum_range(null::app.paid_order_status));
+```
+
+Never infer the values from the column name, from the wrapper that returns them, or
+from what the word would naturally be called. `SETTLED`, `PAID` and `AVAILABLE` are all
+words a careful engineer reaches for, and two of the three do not exist.
+
+**Never report a state the handler did not read.** If `purchase_with_funding` returns a
+`spend_events` row and not the order, then the handler has not observed the order's
+status and must not report one. Return the identifiers actually held, and let the client
+re-read authoritative state.
+
+**Pin the enum in a test.** Export the real values as a constant and assert the display
+map covers all of them and invents none, as `ORDER_STATUSES` does in
+`src/lib/perks/present.ts`. Then re-inject the invented value and confirm the test
+fails. A guard that has only ever passed proves nothing - which is the same rule that
+produced Q-40 and Q-39, and the reason this entry is about the pattern rather than the
+three individual bugs.

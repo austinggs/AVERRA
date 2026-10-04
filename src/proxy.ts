@@ -2,26 +2,25 @@
 //
 // This gate decides only WHETHER a request may reach a page. It never decides
 // anything financial. A page that renders money also re-checks the session and
-// the capability server-side, because a middleware match is a navigation
+// the capability server-side, because a proxy match is a navigation
 // convenience, not an authorization decision (law 3, law 17, doc 71 V7 law 1).
+//
+// The public-path decision itself lives in `@/lib/auth/public-paths` so it can be
+// unit tested. `isPublicPath` is imported rather than duplicated, because a copy here
+// would be a second allowlist that could drift from the tested one - and the one entry
+// that matters today is the provider callback, whose absence redirected every CPX
+// postback to a login page.
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/proxy';
-
-const PUBLIC_PATHS = new Set(['/', '/sign-in', '/sign-up', '/auth/callback', '/reviews']);
-
-function isPublic(pathname: string): boolean {
-  if (PUBLIC_PATHS.has(pathname)) return true;
-  // The public reviews surface is browsable without an account (doc 86).
-  return pathname.startsWith('/reviews/');
-}
+import { isPublicPath } from '@/lib/auth/public-paths';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const response = await updateSession(request);
 
-  if (isPublic(pathname)) {
+  if (isPublicPath(pathname)) {
     return response;
   }
 

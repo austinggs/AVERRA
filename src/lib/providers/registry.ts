@@ -1,5 +1,6 @@
 import 'server-only';
 import { createReferenceAdapter } from '@/lib/providers/adapters/reference';
+import { createCpxCaptureAdapter } from '@/lib/providers/adapters/cpx-capture';
 import type { ProviderAdapter } from '@/lib/providers/types';
 
 // Adapter registry (law 12: provider integrations are replaceable).
@@ -58,6 +59,20 @@ function registerBuiltInAdapters(): void {
   const secret = process.env.PROVIDER_CALLBACK_SECRET ?? null;
 
   registerAdapter('reference', createReferenceAdapter(secret));
+
+  // CPX Research is registered as a CAPTURE adapter, NOT an integration.
+  //
+  // It authenticates nothing, so it can never produce a conversion or a reward. It
+  // exists because `ingestProviderCallback` returns 'no adapter is registered' before
+  // it records evidence - so without SOME adapter, a real CPX postback leaves
+  // `app.provider_callbacks` empty and there is no payload to read.
+  //
+  // `cpx_research` is a real seeded provider code (migration 014), so registering the
+  // capture adapter under it is not the misrepresentation the comment below warns
+  // about: the seeded row stays `CANDIDATE`, and this adapter's `verification_result`
+  // is permanently `UNSUPPORTED`. It is replaced by a real adapter, and removed, once
+  // CPX's actual postback format has been observed.
+  registerAdapter('cpx_research', createCpxCaptureAdapter());
 }
 
 registerBuiltInAdapters();

@@ -18,49 +18,92 @@ import { logger } from '@/lib/observability/logger';
 // that difference tells an attacker which part of the pipeline to attack. The
 // authoritative detail lives in the audit trail.
 
-// Provider postbacks are conventionally sent as application/x-www-form-urlencoded.
-export async function POST(request: Request, context: { params: Promise<{ provider: string }> }) {
-  const { provider } = await context.params;
-  const correlationId = newCorrelationId();
+// CPX Research calls its postback URL with a QUERY STRING, and other providers
+// post a form body. Both are legitimate, so BOTH verbs are accepted and both funnel
+// into one reader, one `ingestProviderCallback` call and one verdict.
+//
+// This route previously exported POST only. Against a query-string postback that
+// returns 405, the callback is never ingested, `app.provider_callbacks` stays empty,
+// and the failure is indistinguishable from "the provider is not sending anything".
+// Supporting both is cheaper than guessing which one CPX uses.
 
-  // The provider code comes from the URL, and is resolved against the registry
-  // and the database. It is never trusted as an identity on its own.
-  if (!/^[a-z0-9_]{2,64}$/.test(provider)) {
-    return NextResponse.json({ status: 'ignored' }, { status: 200 });
+type ProviderRequest =
+  { ok: true; rawBody: string; parsedBody: Record<string, unknown> } | { ok: false };
+
+const IGNORED = () => NextResponse.json({ status: 'ignored' }, { status: 200 });
+
+/** Reads the provider payload from either verb. Never guesses at an unknown shape. */
+async function readProviderRequest(request: Request, method: string): Promise<ProviderRequest> {
+  const url = new URL(request.url);
+
+  // A GET postback carries its parameters in the query string. There is no body, and
+  // no content type to branch on.
+  if (method === 'GET') {
+    const parsedBody: Record<string, unknown> = {};
+    for (const [key, value] of url.searchParams.entries()) {
+      parsedBody[key] = value;
+    }
+
+    // The search string is retained as the raw body so evidence still carries the
+    // bytes as received rather than a re-serialisation.
+    return { ok: true, rawBody: url.search, parsedBody };
   }
 
   const contentType = request.headers.get('content-type') ?? '';
   const rawBody = await request.text();
 
-  let parsedBody: Record<string, unknown> = {};
-  let signature: string | null = null;
-
   try {
     if (contentType.includes('application/json')) {
       const decoded: unknown = JSON.parse(rawBody);
       if (decoded && typeof decoded === 'object' && !Array.isArray(decoded)) {
-        parsedBody = decoded as Record<string, unknown>;
+        return { ok: true, rawBody, parsedBody: decoded as Record<string, unknown> };
       }
-    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      return { ok: false };
+    }
+
+    if (contentType.includes('application/x-www-form-urlencoded')) {
       const params = new URLSearchParams(rawBody);
+      const parsedBody: Record<string, unknown> = {};
       for (const [key, value] of params.entries()) {
         parsedBody[key] = value;
       }
-    } else {
-      // Unknown content type. A provider that sends something we cannot parse is
-      // not a provider we can authenticate, so this is a rejection, not a guess.
-      return NextResponse.json({ status: 'ignored' }, { status: 200 });
+      return { ok: true, rawBody, parsedBody };
     }
+
+    // Unknown content type. A provider that sends something we cannot parse is not
+    // a provider we can authenticate, so this is a rejection, not a guess.
+    return { ok: false };
   } catch {
-    return NextResponse.json({ status: 'ignored' }, { status: 200 });
+    return { ok: false };
   }
+}
+
+async function handleProviderCallback(
+  request: Request,
+  provider: string,
+  method: string,
+): Promise<NextResponse> {
+  const correlationId = newCorrelationId();
+
+  // The provider code comes from the URL, and is resolved against the registry
+  // and the database. It is never trusted as an identity on its own.
+  if (!/^[a-z0-9_]{2,64}$/.test(provider)) {
+    return IGNORED();
+  }
+
+  const read = await readProviderRequest(request, method);
+
+  if (!read.ok) {
+    return IGNORED();
+  }
+
+  const { rawBody, parsedBody } = read;
 
   const signatureHeader = request.headers.get('x-signature');
 
-  if (signatureHeader) {
-    signature = signatureHeader;
-    parsedBody.signature = parsedBody.signature ?? signatureHeader;
-  }
+  const signature = signatureHeader
+    ? (((parsedBody.signature ??= signatureHeader) as string | undefined) ?? null)
+    : null;
 
   // A raw-body signature is computed over the exact bytes received, so the body
   // handed to the verifier is the unmodified text and not a re-serialisation.
@@ -134,4 +177,29 @@ export async function POST(request: Request, context: { params: Promise<{ provid
     { status: 'ok' },
     { status: 200, headers: { 'x-correlation-id': correlationId } },
   );
+}
+
+type RouteContext = { params: Promise<{ provider: string }> };
+
+/**
+ * POST - the conventional provider callback. A form-encoded body.
+ */
+export async function POST(request: Request, context: RouteContext) {
+  const { provider } = await context.params;
+  return handleProviderCallback(request, provider, 'POST');
+}
+
+/**
+ * GET - CPX Research's postback shape.
+ *
+ * Their configured URL is a query string, and a GET against a POST-only handler
+ * returns 405. Accepting both means the integration works whichever verb CPX
+ * actually uses, and it is settled by observation rather than assumption.
+ *
+ * Both verbs share one reader, one ingest call and one verdict: there is no second
+ * code path that could record evidence the first one does not.
+ */
+export async function GET(request: Request, context: RouteContext) {
+  const { provider } = await context.params;
+  return handleProviderCallback(request, provider, 'GET');
 }

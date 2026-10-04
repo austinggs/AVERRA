@@ -26,7 +26,7 @@
 
 import type { ConversionStatus } from '@/lib/providers/types';
 
-/** CPX sends NGN and USD, both with two decimal places. */
+/** CPX sends NGN and USD; NGN has been observed with trailing zeros, see below. */
 export const CPX_SCALE = 2;
 
 /** Unit the reward is recorded in. Matches `reward_sources.currency_unit` elsewhere. */
@@ -37,9 +37,25 @@ export type DecimalResult = { ok: true; value: bigint } | { ok: false; reason: s
 /**
  * Converts a provider's major-unit decimal string into integer minor units.
  *
- * Refuses rather than rounds when the value carries more precision than the scale.
- * Rounding here would be an unrecorded change to a money figure, and the codebase's
- * rule is that sub-minor precision is reported, never silently discarded.
+ * TRAILING ZEROS ARE STRIPPED, AND THAT IS NOT ROUNDING.
+ *
+ * Measured against a live CPX postback on 2026-10-04, the test tool sent
+ * `amount_local=662.6500` for a 0.50 USD conversion - four decimal places - while
+ * `amount_usd=0.50` arrived with two. The scale is therefore not consistent across
+ * fields, and a fixed scale of 2 rejected the local amount outright: every callback
+ * failed normalization with `NORMALIZATION_FAILED`, while CPX's dashboard showed a
+ * delivered postback and credited revenue. That is the same invisible-failure shape as
+ * CR-0030, one layer down.
+ *
+ * Stripping trailing zeros is EXACT. `662.6500` and `662.65` are the same money, and
+ * the conversion below performs no arithmetic on the digits at all - it only removes
+ * zeros that carry no value and left-pads the remainder. Nothing is discarded.
+ *
+ * What is still refused is genuine excess precision: `10.1234` keeps its fourth
+ * decimal place after stripping, exceeds the scale, and is rejected. That case is a
+ * real rounding decision, and rounding a money figure silently is what this codebase
+ * forbids. The rule is deliberately narrow - "no information is lost" - rather than the
+ * broader "at most two decimals", which is what the vendor's formatting tripped over.
  */
 export function decimalToMinor(value: unknown, scale: number = CPX_SCALE): DecimalResult {
   if (typeof value === 'number') {
@@ -67,14 +83,18 @@ export function decimalToMinor(value: unknown, scale: number = CPX_SCALE): Decim
     return { ok: false, reason: 'amount is not a valid non-negative decimal' };
   }
 
-  const [whole, fraction = ''] = trimmed.split('.');
+  const [whole, rawFraction = ''] = trimmed.split('.');
+
+  // Exact, not rounding. `662.6500` -> `662.65`. `10.1000` -> `10.1`. `10.1234` is
+  // untouched, so the precision check below still sees the fourth decimal place.
+  const fraction = rawFraction.replace(/0+$/, '');
 
   if (fraction.length > scale) {
     return {
       ok: false,
       reason:
-        `amount has ${fraction.length} decimal places but the scale allows ${scale}; ` +
-        'refusing to round a money value',
+        `amount has ${fraction.length} significant decimal places but the scale allows ` +
+        `${scale}; refusing to round a money value`,
     };
   }
 
@@ -94,9 +114,31 @@ export function decimalToMinor(value: unknown, scale: number = CPX_SCALE): Decim
 // The decisive case is the pair. `status=1` alone is not enough: a `return_out` also
 // carries a status, and paying on it would pay a user for a survey they abandoned.
 // Equally, `type=complete` alone is not enough, because the same transaction arrives
-// again with `status=2` when CPX detects fraud 15-60 days later.
+// again with a reversal status when CPX detects fraud 15-60 days later.
+//
+// CPX USES TWO REVERSAL STATUSES, AND THE SECOND ONE IS NOT IN THEIR FIELD LIST.
+//
+// The INFORMATION panel documents only `1 = completed, 2 = canceled`. A second
+// advisory panel on the same screen - visible only on the wider publisher layout -
+// states:
+//
+//     "Your postback URL will be called by us a second time, as soon as we cancel a
+//      transaction. &status=1 (pending) to &status=-2 (reversed)."
+//
+// So `-2` is the fraud reversal, and it is the one that arrives 15-60 days later -
+// precisely the event this system exists to catch. Matching only `'2'` classified
+// `-2` as UNKNOWN with a null conversion status, `handleCallback` returned null, and
+// the reversal was discarded with no conversion row at all. That is worse than
+// discarding it as a duplicate: a duplicate still leaves the original visible, while
+// an unknown status leaves no trace that a reversal was ever offered.
+//
+// `2` is retained as a reversal rather than dropped, because their own panel
+// documents it as the cancellation value. Both are checked, and both are reversible.
 
 export type CpxEventKind = 'PAYABLE' | 'REVERSAL' | 'INFORMATIONAL';
+
+/** Statuses CPX uses to withdraw a transaction. See the note above. */
+const REVERSAL_STATUSES = new Set(['2', '-2']);
 
 /**
  * Classifies a (status, type) pair.
@@ -119,11 +161,11 @@ export function classifyCpxEvent(
   // A cancellation can arrive with any `type`, because it is a re-notification about
   // a transaction that was previously something else. It is checked FIRST so a
   // reversed completion is never classified as a fresh completion.
-  if (statusText === '2') {
+  if (REVERSAL_STATUSES.has(statusText)) {
     return {
       kind: 'REVERSAL',
       conversionStatus: 'REVERSED',
-      reason: 'cpx reported status 2: the transaction was canceled or reversed as fraud',
+      reason: `cpx reported status ${statusText}: the transaction was canceled or reversed as fraud`,
     };
   }
 

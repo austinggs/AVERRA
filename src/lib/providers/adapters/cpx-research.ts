@@ -57,16 +57,21 @@ const FIELD = {
 } as const;
 
 /**
- * The value a reviewer may want when auditing a rejected callback.
+ * CPX's published "Postback Whitelist IP" addresses.
  *
- * CPX publishes these as "Postback Whitelist IP". They are recorded as EVIDENCE and
- * are deliberately NOT a gate.
+ * These are recorded as EVIDENCE and are deliberately NOT a gate.
  *
- * The MD5 signature is already a cryptographic check with a shared secret, so an IP
- * gate adds no meaningful security. What it does add is a new way to fail: if CPX
- * ever changes an address, every callback is dropped with no error the provider can
- * act on, and the symptom is indistinguishable from "no conversions are happening".
- * That is the exact failure mode this integration has already hit twice.
+ * THE MD5 SIGNATURE IS THE AUTHENTICITY CHECK. The hash is computed with a shared
+ * secret, so an IP gate adds no meaningful security. What it adds is a new way to
+ * fail, and that is not hypothetical: a live CPX postback on 2026-10-04 arrived from
+ * `44.204.183.114`, which is NOT in this list, while a genuine postback from
+ * `157.90.97.92` is. The vendor's published list is therefore incomplete. Gating on it
+ * would have dropped a real conversion with no error the provider could act on, and the
+ * symptom is indistinguishable from "no conversions are happening" - the exact failure
+ * mode this integration has already hit twice (CR-0030, and `amount_local` scaling).
+ *
+ * These addresses are compared against the REQUEST's remote address, never against
+ * `ip_click`. See the note on the field name in `handleCallback`.
  */
 export const CPX_POSTBACK_IPS = ['188.40.3.73', '157.90.97.92', '2a01:4f8:d0a:30ff:2'];
 
@@ -157,7 +162,21 @@ export function createCpxAdapter(): ProviderAdapter {
       const usdRaw = input.body[FIELD.amountUsd];
       const amountUsd = typeof usdRaw === 'string' ? decimalToMinor(usdRaw) : null;
 
-      const clickIp = String(input.body[FIELD.clickIp] ?? '');
+      // Two DIFFERENT addresses, and conflating them makes both useless.
+      //
+      // `ip_click` is the END USER's address at the moment they clicked through to the
+      // survey. CPX documents it as "user click IP". On the live postback of
+      // 2026-10-04 it was the publisher's own workstation, which is exactly what a test
+      // click looks like - it is evidence about a person, not about the vendor.
+      //
+      // `input.remoteAddress` is the address the POSTBACK arrived from, i.e. CPX's own
+      // server. That is the only thing the published whitelist can be compared against.
+      //
+      // Comparing the whitelist to `ip_click` reported `false` for essentially every
+      // callback while appearing to be a source check. Both are now recorded, each
+      // labelled for what it is.
+      const clickIp = asText(input.body[FIELD.clickIp]);
+      const postbackIp = input.remoteAddress ?? null;
 
       return {
         providerEventId: transactionId.value,
@@ -183,8 +202,11 @@ export function createCpxAdapter(): ProviderAdapter {
           reason: kind.reason ?? null,
           amountUsdMinor: amountUsd?.ok ? amountUsd.value.toString() : null,
           subid2: asText(input.body[FIELD.subid2]),
-          clickIp: clickIp || null,
-          knownPostbackIp: CPX_POSTBACK_IPS.includes(clickIp),
+          // EVIDENCE ONLY. Never a gate - see CPX_POSTBACK_IPS.
+          postbackSourceIp: postbackIp,
+          postbackFromKnownSource: postbackIp !== null && CPX_POSTBACK_IPS.includes(postbackIp),
+          // The end user's address, which is a different fact and a different machine.
+          clickIp: clickIp ?? null,
           eventTimeProvidedByProvider: false,
         },
       };

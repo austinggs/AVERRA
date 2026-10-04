@@ -49,9 +49,27 @@ export type IngestInput = {
   correlationId?: string;
 };
 
+/**
+ * The provider's own identifier for this event, as claimed in the payload.
+ *
+ * THE GENERIC `event_id` NAME IS NOT ENOUGH. CPX Research sends its transaction id as
+ * `trans_id` and never sends `event_id`, so on the live postback of 2026-10-04 this
+ * function returned null for a signature-VERIFIED callback. The vendor's id therefore
+ * never reached `provider_callbacks.claimed_event_id`, and reconciling a CPX payout
+ * dispute meant digging through `raw_payload` by hand.
+ *
+ * `trans_id` is checked alongside `event_id` because it is a documented CPX postback
+ * placeholder, not an invented name. It is recorded as EVIDENCE either way: nothing
+ * downstream trusts this value to identify a paying user, and the reward path resolves
+ * the user from our own tracking table.
+ */
 function readClaimedEventId(body: Record<string, unknown>): string | null {
-  const value = body.event_id;
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  for (const field of ['event_id', 'trans_id']) {
+    const value = body[field];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+
+  return null;
 }
 
 export async function ingestProviderCallback(input: IngestInput): Promise<IngestResult> {

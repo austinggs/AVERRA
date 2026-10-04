@@ -1870,3 +1870,130 @@ map covers all of them and invents none, as `ORDER_STATUSES` does in
 fails. A guard that has only ever passed proves nothing - which is the same rule that
 produced Q-40 and Q-39, and the reason this entry is about the pattern rather than the
 three individual bugs.
+
+---
+
+## Q-42 - a provider signature was implemented against a guess, and the guess was untested against the vendor
+
+**Status:** resolved in CR-0031, by observation rather than by argument.
+
+CPX's postback signing scheme was undocumented. CR-0030 recorded four external sources
+that disagreed:
+
+| Source                        | Claimed scheme                         |
+| ----------------------------- | -------------------------------------- |
+| One production integration    | `md5(trans_id + secure_hash)`          |
+| A second sample               | verifies nothing at all                |
+| The largest known CPX network | documents no postback hash             |
+| CPX outbound listing docs     | `md5(ext_user_id + '-' + secure_hash)` |
+
+The adapter was written against `md5(trans_id - secure_hash)`, taken from the
+publisher's own INFORMATION panel. A live test postback on 2026-10-04 returned
+`verification_result = VERIFIED` with `signature_algorithm = md5(trans_id-secure_hash)`,
+confirming the hyphen and the transaction-id-only input.
+
+**Why it mattered to write it down.** Every wrong variant fails **closed**, and closed
+means every real conversion is silently rejected while the dashboard reads "no earnings
+yet". The dangerous property is not that a guess is wrong; it is that a guess and a
+correct implementation are indistinguishable until real traffic arrives. A unit test
+cannot settle this, because a test written from the same assumption as the code proves
+the code agrees with itself.
+
+**The rule.** Where a vendor's behaviour is not documented, prefer a vendor-authored
+screen over third-party integration reports, and record which source was used. If the
+source cannot be reached, record the ambiguity in a change record rather than resolving
+it silently - an unresolved signing scheme is a known unknown, and a confidently wrong
+one is not.
+
+**And record what the signature does not cover.** It binds `trans_id` alone. Amount,
+status and user are outside the MAC, so a verified callback's amount is authenticated as
+"this transaction id exists", not as "this amount is correct". Amount-versus-rate
+comparison belongs in reconciliation and must never be described as a cryptographic
+check.
+
+---
+
+## Q-43 - a fraud reversal was discarded because it used a status value the vendor did not list in its field reference
+
+**Status:** corrected in CR-0031. Recorded because the pattern is the whole point.
+
+`classifyCpxEvent` matched `status === '2'`. CPX's INFORMATION panel documents
+`{status}` as "1 = completed 2 = canceled", and that is what the code was written
+against.
+
+A **second advisory panel on the same screen**, visible only on the wider publisher
+layout, states:
+
+> Your postback URL will be called by us a second time, as soon as we cancel a
+> transaction. &status=1 (pending) to &status=-2 (reversed).
+
+So `-2` is the fraud reversal, arriving 15-60 days after the completion - the single event
+this integration exists to catch. It classified as `UNKNOWN`, `conversionStatus` was
+null, `handleCallback` returned null, and the reversal was dropped with **no conversion
+row at all**.
+
+**Why this is worse than the duplicate case found in the same review.** A reversal
+discarded as a duplicate at least leaves the original conversion standing and visible. A
+reversal discarded as an unknown status leaves no trace that a withdrawal was ever
+offered. With no reward ever having been created, the loss was invisible; the day one
+exists, it is a clawback that silently never happens.
+
+**This is Q-41 again, in a provider vocabulary rather than a database enum.** The
+comparison is always false, so nothing throws, and the code around it is fail-closed -
+which is precisely what made it look deliberate. `SETTLED`, `PAID` and `2`-only were each
+a word a careful engineer reached for and each was absent from the real vocabulary.
+
+**The rule, generalised.** A vendor's _reference table_ is not their _wire behaviour_.
+Look for the advisory panels, the footnotes and the second notification rules, and
+prefer a value demonstrated by observed traffic over a value read from documentation.
+Where the two disagree, treat the disagreement itself as the finding.
+
+**Pin the whole vocabulary in a test.** `leaves no documented cpx status unrecognised`
+sweeps every status CPX sends against every type and asserts none yields `UNKNOWN`. The
+old population sweep used `['1','2','0','x',undefined]` - it omitted `-2`, which is
+exactly why the defect survived a green suite. Adding a value to the sweep is what
+caught it. Then re-inject the defect and confirm the suite fails.
+
+---
+
+## Q-44 - two integration facts were carried in comments and column names rather than in code
+
+**Status:** both corrected in CR-0031. Grouped because they share one cause.
+
+**The source-IP list was compared against the wrong machine.** `CPX_POSTBACK_IPS` held
+CPX's published "Postback Whitelist IP" addresses and was compared against `ip_click`,
+which CPX documents as **"user click IP"** - the address of the person who clicked
+through to the survey. The comparison was therefore false for essentially every callback
+while appearing to be a source check.
+
+The unit test made this worse. It passed a whitelisted address in as `ip_click` and
+asserted the result was `true`, so the suite encoded the category error as expected
+behaviour and would have failed any attempt to fix it.
+
+The same screen also proved the list is incomplete: the live postback arrived from
+`44.204.183.114`, which CPX does not publish. Gating on it would have dropped a real
+conversion with no error the provider could act on.
+
+**`provider_callbacks.claimed_event_id` was null on a verified callback.**
+`readClaimedEventId` looked only for `event_id`, a generic name CPX does not send; their
+transaction id is `trans_id`. The vendor's identifier never reached the evidence column.
+
+**The shared cause.** Both facts lived in a name. `ip_click` looks like a source
+indicator and `event_id` looks universal, so neither was read against the vendor's field
+list. The corrected code compares the whitelist against the request's `remoteAddress`,
+records `ip_click` as the separate fact it is, and falls back to `trans_id`.
+
+**Also corrected here: migration 014's seed comment** asserts "CANDIDATE, is_active is
+false". There is no `is_active` column on `app.providers`. It exists on
+`deposit_token_configs`, `offers`, `surveys`, `game_events`, `referral_codes` and
+`game_achievements`, but not here - so a query selecting it fails with 42703, which is
+how this was found. The comment describes a safety property that does not exist, and a
+future author could "fix" it by adding the column rather than by removing the claim.
+Migration 014 is applied and stays byte-identical; the correction belongs in
+`docs/DISCREPANCIES.md` and a forward comment.
+
+**The rule.** Two identifiers from different machines never share a comparison, and a
+generic field name is not evidence that a vendor uses it. Read the vendor's field table
+before comparing anything to a value in it, and check that the test's fixture places the
+value in the field it will actually arrive in - a test that feeds the wrong field asserts
+the defect rather than catching it.

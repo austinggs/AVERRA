@@ -73,6 +73,62 @@ describe('decimalToMinor', () => {
     expect(result.ok === false && result.reason).toMatch(/refusing to round/);
   });
 
+  // THE DEFECT THIS SUITE FAILED TO CATCH, MEASURED AGAINST A LIVE POSTBACK.
+  //
+  // CPX's test tool sent `amount_local=662.6500` on 2026-10-04 - four decimal places -
+  // for a 0.50 USD conversion, while `amount_usd` arrived as `0.50` with two. The old
+  // check compared raw fractional length against a fixed scale of 2, so it rejected the
+  // local amount, `handleCallback` returned null, and EVERY CPX callback failed
+  // normalization with `NORMALIZATION_FAILED` while the vendor dashboard reported the
+  // postback as delivered and credited the revenue.
+  //
+  // Stripping trailing zeros is exact, not rounding: no information is discarded.
+  it('strips TRAILING ZEROS from the live 662.6500 figure without rounding', () => {
+    const result = decimalToMinor('662.6500');
+
+    expect(result.ok).toBe(true);
+    // 662.65 NGN -> 66265 kobo. Identical to what `662.65` produces.
+    expect(result.ok && result.value).toBe(66265n);
+    expect(result.ok && result.value).toBe(
+      decimalToMinor('662.65').ok
+        ? (decimalToMinor('662.65') as { ok: true; value: bigint }).value
+        : 0n,
+    );
+  });
+
+  it('produces the same minor units however many trailing zeros CPX pads', () => {
+    const values = ['662.65', '662.650', '662.6500', '662.65000'];
+    const converted = values.map((v) => decimalToMinor(v));
+
+    for (const result of converted) expect(result.ok).toBe(true);
+
+    const distinct = new Set(converted.map((r) => (r.ok ? r.value.toString() : 'refused')));
+    expect(distinct.size).toBe(1);
+  });
+
+  it('still refuses a NON-ZERO fourth decimal place, which would be real rounding', () => {
+    // `662.6501` keeps its fourth place after stripping, so this must NOT pass. The
+    // distinction from `662.6500` is the whole point: only zeros are removable.
+    const result = decimalToMinor('662.6501');
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/refusing to round/);
+  });
+
+  it('still refuses excess precision that happens to end in a zero', () => {
+    // `10.1230` strips to `10.123`, which is still three places against a scale of 2.
+    const result = decimalToMinor('10.1230');
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('treats an all-zero fraction as a real zero, not as excess precision', () => {
+    const result = decimalToMinor('5.0000');
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value).toBe(500n);
+  });
+
   it('round-trips through the shared integer parser unchanged', () => {
     const minor = decimalToMinor('1073.48');
     expect(minor.ok).toBe(true);
@@ -129,6 +185,47 @@ describe('classifyCpxEvent', () => {
     }
   });
 
+  // THE FRAUD REVERSAL, WHICH IS NOT IN CPX'S OWN FIELD LIST.
+  //
+  // Their INFORMATION panel documents `1 = completed, 2 = canceled`. A second advisory
+  // panel on the same screen states: "Your postback URL will be called by us a second
+  // time, as soon as we cancel a transaction. &status=1 (pending) to &status=-2
+  // (reversed)."
+  //
+  // So `-2` is the value that actually arrives 15-60 days later, when a completion is
+  // reclassified as fraud. Matching only '2' classified it UNKNOWN with a null
+  // conversion status, `handleCallback` returned null, and the reversal was discarded
+  // with NO conversion row - leaving no trace that a reversal was ever offered.
+  it('reverses on status -2, the fraud reversal CPX documents separately', () => {
+    const result = classifyCpxEvent('-2', 'complete');
+
+    expect(result.kind).toBe('REVERSAL');
+    expect(result.conversionStatus).toBe('REVERSED');
+  });
+
+  it('reverses on -2 regardless of the type it arrives with', () => {
+    for (const type of ['complete', 'return_out', 'bonus']) {
+      expect(classifyCpxEvent('-2', type).conversionStatus).toBe('REVERSED');
+    }
+  });
+
+  it('tolerates whitespace around the -2 they may send', () => {
+    expect(classifyCpxEvent(' -2 ', 'complete').conversionStatus).toBe('REVERSED');
+  });
+
+  // The asymmetry matters: -2 must NEVER be payable, and 1 must never be a reversal.
+  it('keeps -2 out of PAYABLE and 1 out of REVERSAL', () => {
+    expect(classifyCpxEvent('-2', 'complete').kind).not.toBe('PAYABLE');
+    expect(classifyCpxEvent('1', 'complete').kind).not.toBe('REVERSAL');
+  });
+
+  // `-2` and `2` are distinct strings. A numeric comparison would conflate them, and
+  // `parseInt('-2')` is where that temptation starts.
+  it('does not treat -2 as 2 by numeric coercion', () => {
+    expect(Number('-2')).not.toBe(Number('2'));
+    expect(classifyCpxEvent('-2', 'complete').reason).toContain('-2');
+  });
+
   it('refuses an unrecognised status rather than guessing', () => {
     const result = classifyCpxEvent('7', 'complete');
 
@@ -154,8 +251,12 @@ describe('classifyCpxEvent', () => {
   });
 
   // NOBODY may reach PAYABLE except the one documented pair.
+  //
+  // `-2` is in this population because omitting it is precisely how the fraud reversal
+  // escaped: the old list was `['1','2','0','x',undefined]`, so a sweep over the
+  // vocabulary CPX actually sends never exercised the one value that matters most.
   it('makes PAYABLE reachable for exactly one combination', () => {
-    const statuses = ['1', '2', '0', 'x', undefined];
+    const statuses = ['1', '2', '-2', '0', 'x', undefined];
     const types = ['complete', 'return_out', 'bonus', 'other', undefined];
 
     const payable = statuses
@@ -163,6 +264,16 @@ describe('classifyCpxEvent', () => {
       .filter((r) => r.kind === 'PAYABLE');
 
     expect(payable).toHaveLength(1);
+  });
+
+  // The same sweep, asserting every status CPX sends is UNDERSTOOD. A documented value
+  // yielding UNKNOWN is a value we would silently drop.
+  it('leaves no documented cpx status unrecognised', () => {
+    for (const status of ['1', '2', '-2']) {
+      for (const type of ['complete', 'return_out', 'bonus']) {
+        expect(classifyCpxEvent(status, type).kind).not.toBe('UNKNOWN');
+      }
+    }
   });
 
   it('records the currency it normalises into', () => {

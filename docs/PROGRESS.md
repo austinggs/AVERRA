@@ -51,8 +51,10 @@ AVERRA_FULL_PLAN implemented?": no, and here is precisely where the line falls.
 
 1. **Nothing is deployed.** No Vercel project, no Supabase Storage policies, no
    scheduled jobs. Docs 60/61/62/63 are unstarted.
-2. **No live provider is onboarded.** Doc 07's decision gates are unexercised:
-   no real callback has been authenticated end to end.
+2. **No live provider is onboarded.** Doc 07's decision gates are unexercised. As of
+   2026-10-04 a real CPX callback **is** authenticated end to end (CR-0031), but
+   `cpx_research` is `CANDIDATE` with all seven gate timestamps null, no reward source
+   exists, and no conversion has been recorded - so the gates remain unexercised.
 3. **The admin portal is data-only.** The capability model, roles, dual-approval
    and audit trail exist in SQL; there is no console to use them (doc 87 lists 20
    modules; none is built).
@@ -665,3 +667,78 @@ input. No subscription renewal. Refunds have no admin UI yet.
 Next atomic task: **review Storage policies and validated media upload**, then the
 moderation console. `attach_review_comment_media` records metadata for an object
 nothing uploads, which is Q-38's shape again.
+
+---
+
+## Session - 2026-10-04 - CPX Research adapter, verified end to end (CR-0031)
+
+Date: 2026-10-04
+Agent/owner: AI coding agent (session with the repository owner)
+Phase: 3 - Providers (M3)
+Milestone: M3 (provider integration) - first real vendor authenticated, still not live
+
+**A real callback is now authenticated end to end.** This is the first time that line in
+the progress notes has been true. `app.provider_callbacks` id 5 records
+`verification_result = VERIFIED` with `signature_algorithm = md5(trans_id-secure_hash)`,
+from CPX's own test tool against the production host. That settles the signing question
+CR-0030 left open, and CR-0030's routing fix is confirmed live: the endpoint returns
+`200 {"status":"ok"}` where it previously returned `307` to sign-in and then `405`.
+
+**Three defects were found by that traffic, and all three were invisible from outside.**
+Each returned `200 {"status":"ok"}` to CPX with the dashboard showing revenue credited,
+while Averra created nothing.
+
+1. **Every callback was rejected on amount precision.** CPX sent `amount_local=662.6500`
+   (four decimals) for a 0.50 USD conversion, while `amount_usd` arrived with two. A fixed
+   scale of 2 refused it, so `handleCallback` returned null and every callback recorded
+   `NORMALIZATION_FAILED`. Fixed by stripping trailing zeros - exact, not rounding;
+   `662.6501` and `10.1230` are still refused.
+2. **The fraud reversal would have been discarded entirely.** CPX reverses with
+   `status=-2`, documented only in a second advisory panel, not in their field list.
+   Matching `'2'` alone classified it UNKNOWN and dropped it with no conversion row, so
+   the 15-60 day clawback would have silently never happened.
+3. **The source-IP check compared the wrong machine.** The published whitelist was
+   compared against `ip_click`, which is the _end user's_ address. The live postback came
+   from `44.204.183.114`, which CPX does not publish - so gating on that list would have
+   dropped a real conversion and every one behind it.
+
+Also fixed: `claimed_event_id` was null on a verified callback because CPX sends
+`trans_id`, not `event_id`.
+
+**The misconfigured URL was measured, not argued.** An unauthenticated probe to
+`/callbacks/cpx` returned `200 {"status":"ok"}`, byte-identical to a working request, and
+wrote **zero** rows - the unknown-provider rejection precedes evidence capture. A green
+tick in the vendor dashboard and an empty table are the same event. The acceptance check
+for this integration is a table read, never an HTTP status.
+
+**Verification:** 19/19 pgTAP suites, 414 assertions, 0 failures. 19 Vitest files (was
+18). Typecheck, lint, build, prettier clean; `check:migrations` 189 fns, `check:grants`
+91 public fns, `check:data-api` 83 tables. Every fix was proven by re-injecting its
+defect and confirming the suite fails, then restoring - including deleting the route's
+`GET` export to reproduce the 405. The real payload is kept verbatim as a fixture,
+because both the amount and the IP defect were invisible to invented payloads.
+
+**What did not change, deliberately.** `cpx_research` is still `CANDIDATE`. All seven doc
+07 gate timestamps are null, `canProduceReward()` is false, and
+`provider:cpx_research` does not exist, so nothing can pay. `CONVERSIONS` is 0.
+
+**Still open, and blocking before `INTEGRATION_TESTING`:**
+
+- **CPX contradicts itself about `status=1`** - "1 = completed" in the field list,
+  "`&status=1` (pending)" in the advisory panel. We treat `status=1` + `type=complete` as
+  payable. If `1` can mean pending, an unfinished survey could be paid. **Needs written
+  confirmation from CPX**; the test tool cannot distinguish the two.
+- **Migration 057, the append-only reversal.** `reverses_conversion_id`, a `:2` / `:-2`
+  event suffix so the follow-up is not collapsed by `uq_provider_conversions_event`, and
+  `apply_provider_reversal` calling `reverse_conversion`. Gated on the point above.
+- **Script-tag issuance and `subid_1` binding.** The live postback carried an empty
+  `subid_1`, so no event can resolve a paying user and the callback correctly landed as
+  evidence with `UNRESOLVED_TRACKING_ID`. Nothing is payable end to end until this exists.
+- **Three probe rows are permanently in `provider_callbacks`.** Written by diagnostic
+  requests during this session, correctly rejected, and undeletable by
+  `trg_provider_callbacks_immutable`. They carry `trans_id` of `probe`, `probe4` and
+  `probe`. An auditor reading by hand will meet them.
+
+Next atomic task: **ask CPX to confirm `status=1`, then build migration 057.** The
+reversal clawback is the only path by which money already credited comes back, and it
+does not exist yet.

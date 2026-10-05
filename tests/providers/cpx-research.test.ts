@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createCpxAdapter, CPX_POSTBACK_IPS } from '@/lib/providers/adapters/cpx-research';
+import { cpxReversalEventId } from '@/lib/providers/adapters/cpx-contract';
 import type { RawCallback } from '@/lib/providers/types';
 
 // CPX documents its postback signature as, verbatim from the publisher panel:
@@ -423,6 +424,97 @@ describe('the live CPX postback of 2026-10-04', () => {
     expect(reversal).not.toBeNull();
     expect(reversal?.status).toBe('REVERSED');
     expect(reversal?.normalizedPayload.kind).toBe('REVERSAL');
+  });
+
+  // THE CORE ASSERTION: a reversal does not collapse onto its own completion.
+  //
+  // This is the defect. Recorded under the bare trans_id, law 5's unique index returned
+  // the ORIGINAL conversion as a DUPLICATE and the fraud clawback was discarded - no
+  // reversal row, no reverse_conversion call, no error anywhere, while CPX's dashboard
+  // showed the reversal delivered.
+  it('gives a reversal its OWN event identity, so it cannot collide with its completion', async () => {
+    process.env.CPX_SECURE_HASH = SECRET;
+    const adapter = createCpxAdapter();
+
+    const completion = await adapter.handleCallback!(callback(LIVE_PAYLOAD, '157.90.97.92'));
+    const reversal = await adapter.handleCallback!(
+      callback(
+        { ...LIVE_PAYLOAD, status: '-2', hash: vendorHash(LIVE_TRANS_ID, SECRET) },
+        '157.90.97.92',
+      ),
+    );
+
+    // Same vendor transaction, different event identity.
+    expect(completion?.providerEventId).toBe(LIVE_TRANS_ID);
+    expect(reversal?.providerEventId).not.toBe(LIVE_TRANS_ID);
+    expect(reversal?.providerEventId).toBe(`${LIVE_TRANS_ID}:-2`);
+  });
+
+  // The link is what lets SQL find the original. It must carry the BARE vendor id, not
+  // the suffixed one, or the lookup would search for a transaction id that never existed
+  // as a completion.
+  it('names the BARE transaction id as the thing being reversed', async () => {
+    process.env.CPX_SECURE_HASH = SECRET;
+
+    const reversal = await createCpxAdapter().handleCallback!(
+      callback(
+        { ...LIVE_PAYLOAD, status: '-2', hash: vendorHash(LIVE_TRANS_ID, SECRET) },
+        '157.90.97.92',
+      ),
+    );
+
+    expect(reversal?.reversesTransactionId).toBe(LIVE_TRANS_ID);
+  });
+
+  // An ordinary completion must NOT claim to reverse anything. If it did, every
+  // completion would arrive with a link and the reversal command would be invocable on
+  // ordinary rows.
+  it('claims no reversal on an ordinary completion', async () => {
+    process.env.CPX_SECURE_HASH = SECRET;
+
+    const completion = await createCpxAdapter().handleCallback!(
+      callback(LIVE_PAYLOAD, '157.90.97.92'),
+    );
+
+    expect(completion?.reversesTransactionId).toBeNull();
+  });
+
+  // Both vendor reversal statuses are distinct identities, so neither collapses onto the
+  // other or onto the completion. `2` and `-2` are different values in CPX's vocabulary
+  // and a numeric comparison would conflate them.
+  it('keeps status 2 and status -2 as distinct reversal identities', async () => {
+    process.env.CPX_SECURE_HASH = SECRET;
+    const adapter = createCpxAdapter();
+
+    const cancelled = await adapter.handleCallback!(
+      callback(
+        { ...LIVE_PAYLOAD, status: '2', hash: vendorHash(LIVE_TRANS_ID, SECRET) },
+        '157.90.97.92',
+      ),
+    );
+    const reversed = await adapter.handleCallback!(
+      callback(
+        { ...LIVE_PAYLOAD, status: '-2', hash: vendorHash(LIVE_TRANS_ID, SECRET) },
+        '157.90.97.92',
+      ),
+    );
+
+    expect(cancelled?.providerEventId).toBe(`${LIVE_TRANS_ID}:2`);
+    expect(reversed?.providerEventId).toBe(`${LIVE_TRANS_ID}:-2`);
+    expect(cancelled?.providerEventId).not.toBe(reversed?.providerEventId);
+    // Both are reversals, so both are withdrawable.
+    expect(cancelled?.status).toBe('REVERSED');
+    expect(reversed?.status).toBe('REVERSED');
+  });
+
+  // Determinism is what keeps a REPLAYED reversal idempotent: the same status twice must
+  // produce the same id, so the unique index can collapse it.
+  it('produces a deterministic id, so a replayed reversal still collapses', async () => {
+    expect(cpxReversalEventId('1001228169113', '-2')).toBe('1001228169113:-2');
+    expect(cpxReversalEventId('1001228169113', '-2')).toBe(
+      cpxReversalEventId('1001228169113', '-2'),
+    );
+    expect(cpxReversalEventId('abc', '2')).not.toBe(cpxReversalEventId('abc', '-2'));
   });
 
   it('verifies the real signature when the live secret is available', async () => {

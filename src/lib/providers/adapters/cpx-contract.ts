@@ -141,6 +141,29 @@ export type CpxEventKind = 'PAYABLE' | 'REVERSAL' | 'INFORMATIONAL';
 const REVERSAL_STATUSES = new Set(['2', '-2']);
 
 /**
+ * The provider event id a reversal is recorded under.
+ *
+ * THE DEFECT THIS FIXES. CPX re-notifies a transaction with the SAME `trans_id` and a
+ * reversal status. Carrying that id unchanged meant law 5's unique index on
+ * (provider_id, provider_event_id) returned the ORIGINAL conversion as a DUPLICATE,
+ * and the fraud clawback was discarded with no reversal row, no `reverse_conversion`
+ * call and no error anywhere - while CPX's dashboard showed it delivered.
+ *
+ * A reversal is a distinct business event about a distinct thing that happened, so it
+ * gets a distinct identity. The original completion keeps `trans_id` untouched: its
+ * `provider_event_id` is not rewritten, only a new row is added beside it.
+ *
+ * The suffix keeps the vendor's value verbatim, so `2` and `-2` stay distinct. A
+ * numeric comparison would conflate them, and they are both real.
+ *
+ * Replay safety survives: CPX sending `status=-2` twice produces the same suffix both
+ * times, so the unique index still collapses the duplicate.
+ */
+export function cpxReversalEventId(transactionId: string, status: string): string {
+  return `${transactionId}:${status}`;
+}
+
+/**
  * Classifies a (status, type) pair.
  *
  * `UNKNOWN` is a distinct outcome rather than a failure, so an unrecognised pair is

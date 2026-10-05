@@ -140,3 +140,60 @@ export function toRawCallback(args: {
 export function newCorrelationId(): string {
   return randomUUID();
 }
+
+/**
+ * Applies a recorded provider reversal.
+ *
+ * This is the ONLY caller of `apply_provider_reversal`, and the reason it lives here
+ * rather than inline in `ingest.ts` is that a reversal moves money. The command
+ * resolves which conversion the vendor withdrew, refuses a row that is not a reversal,
+ * and routes through `reverse_reward` so the original keeps its history (law 7).
+ *
+ * WHY THE ERROR IS RETURNED RATHER THAN THROWN
+ *
+ * The callback route answers every provider callback with a uniform 200, so a throw
+ * here would be swallowed and the withdrawal would be lost with nothing recorded -
+ * which is the exact silent-discard defect migration 057 exists to prevent. Returning
+ * the error lets `ingest.ts` record `REVERSAL_APPLY_FAILED` against the callback, which
+ * makes the failure visible and retryable from the audit trail.
+ *
+ * `no_reward` is a SUCCESS outcome, not an error: the conversion existed and was never
+ * converted into money, so there is nothing to claw back. While no provider is LIVE
+ * that is the only possible outcome.
+ */
+export async function applyProviderReversal(args: {
+  reversalConversionId: string;
+  correlationId: string;
+  reasonCode?: string;
+  actorId?: string | null;
+}): Promise<{
+  outcome: {
+    outcome: 'reversed' | 'no_reward';
+    originalId?: string;
+    alreadyReversed?: boolean;
+  } | null;
+  error: { message: string } | null;
+}> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc('apply_provider_reversal', {
+    p_reversal_conversion_id: args.reversalConversionId,
+    // The provider's own words, carried into the audit trail verbatim.
+    p_reason_code: args.reasonCode ?? 'provider reported the transaction as reversed',
+    p_actor_id: args.actorId ?? null,
+    p_correlation_id: args.correlationId,
+  });
+
+  if (error) {
+    return { outcome: null, error: { message: error.message } };
+  }
+
+  return {
+    outcome: (data ?? null) as {
+      outcome: 'reversed' | 'no_reward';
+      originalId?: string;
+      alreadyReversed?: boolean;
+    } | null,
+    error: null,
+  };
+}

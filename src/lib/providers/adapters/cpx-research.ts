@@ -38,6 +38,7 @@ import { parseAmountMinor, requireString } from '@/lib/providers/normalize';
 import {
   CPX_LOCAL_UNIT,
   classifyCpxEvent,
+  cpxReversalEventId,
   decimalToMinor,
 } from '@/lib/providers/adapters/cpx-contract';
 
@@ -178,8 +179,26 @@ export function createCpxAdapter(): ProviderAdapter {
       const clickIp = asText(input.body[FIELD.clickIp]);
       const postbackIp = input.remoteAddress ?? null;
 
+      // A REVERSAL IS A DISTINCT EVENT AND GETS A DISTINCT IDENTITY.
+      //
+      // CPX re-notifies the same trans_id with status 2 or -2. Recording that under the
+      // bare trans_id collided with law 5's unique index and the original conversion came
+      // back as a DUPLICATE - so the fraud clawback was discarded with no reversal row and
+      // no error anywhere. The suffixed id keeps the vendor's value verbatim, so `2` and
+      // `-2` stay distinct, and a replayed reversal still collapses onto the same id.
+      //
+      // `reversesTransactionId` carries the BARE transaction id, which is what
+      // `record_provider_conversion` resolves to the original row. It is the provider's
+      // own identifier, not a conversion id, and it is never taken from a request body
+      // field a caller controls beyond CPX's signature.
+      const isReversal = kind.kind === 'REVERSAL';
+      const eventId = isReversal
+        ? cpxReversalEventId(transactionId.value, String(input.body[FIELD.status]).trim())
+        : transactionId.value;
+
       return {
-        providerEventId: transactionId.value,
+        providerEventId: eventId,
+        reversesTransactionId: isReversal ? transactionId.value : null,
         sourceType: 'SURVEY',
         // The campaign reference is their offer id, which is a provider-side concept.
         campaignRef: asText(input.body[FIELD.offerId]),

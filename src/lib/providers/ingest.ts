@@ -10,6 +10,7 @@ import {
 import { checkTimestamp } from '@/lib/providers/normalize';
 import { getAdapter } from '@/lib/providers/registry';
 import {
+  applyProviderReversal,
   newCorrelationId,
   recordCallbackEvidence,
   recordCallbackOutcome,
@@ -302,22 +303,72 @@ async function persistConversion(args: {
   // previous code caught a 23505 and then re-read the winning row from TypeScript,
   // leaving a window between the failed insert and the re-read in which the answer
   // could change underneath it.
-  const { data: recordResult, error } = await admin.rpc('record_provider_conversion', {
-    p_provider_id: args.providerId,
-    p_provider_event_id: normalized.providerEventId,
-    p_source_type: normalized.sourceType,
-    p_event_type: normalized.eventType,
-    p_callback_id: args.callbackId,
-    p_campaign_ref: normalized.campaignRef,
-    p_user_id: userId,
-    p_tracking_id: normalized.trackingId,
-    p_status: mayConvert ? 'VALIDATED' : 'RECEIVED',
-    p_gross_value_minor: normalized.grossValueMinor ?? null,
-    p_currency: normalized.currency,
-    p_event_timestamp: normalized.eventTimestamp?.toISOString() ?? null,
-    p_normalized_payload: normalized.normalizedPayload,
-    p_correlation_id: args.correlationId,
-  });
+  // A REVERSAL IS ACTED ON DIFFERENTLY, AND IT IS ACTED ON AT ALL.
+  //
+  // Before anything else: whether this event is a reversal. Both branches below depend
+  // on it, and it must be computed from the ADAPTER's verdict rather than from a status
+  // string compared here - the adapter already resolved the vendor's vocabulary, and
+  // re-deriving it here would be the Q-43 pattern in a second place.
+  const isReversal = normalized.status === 'REVERSED';
+
+  // A REVERSAL TAKES A DIFFERENT COMMAND.
+  //
+  // `record_provider_reversal_conversion` rather than `record_provider_conversion` with
+  // a flag. Migration 034's function is applied and its reviewed signature is left
+  // alone - changing it would have broken the 14-argument positional call in
+  // migration 035's public wrapper, which compiles and then fails at runtime.
+  //
+  // A reversal also records `matched`, which says whether an original conversion was
+  // found. false is the expected outcome while no provider is LIVE, and it is reported
+  // rather than treated as a failure.
+  const recordArgs = isReversal
+    ? {
+        p_provider_id: args.providerId,
+        // The suffixed id, so the unique index admits the reversal beside the original.
+        p_provider_event_id: normalized.providerEventId,
+        // The BARE vendor transaction id, resolved to the original row in SQL.
+        p_reverses_event_id: normalized.reversesTransactionId,
+        p_source_type: normalized.sourceType,
+        p_event_type: normalized.eventType,
+        p_callback_id: args.callbackId,
+        p_campaign_ref: normalized.campaignRef,
+        p_currency: normalized.currency,
+        p_gross_value_minor: normalized.grossValueMinor ?? null,
+        p_event_timestamp: normalized.eventTimestamp?.toISOString() ?? null,
+        p_normalized_payload: normalized.normalizedPayload,
+        p_correlation_id: args.correlationId,
+      }
+    : {
+        p_provider_id: args.providerId,
+        p_provider_event_id: normalized.providerEventId,
+        p_source_type: normalized.sourceType,
+        p_event_type: normalized.eventType,
+        p_callback_id: args.callbackId,
+        p_campaign_ref: normalized.campaignRef,
+        p_user_id: userId,
+        p_tracking_id: normalized.trackingId,
+        // A REVERSAL IS RECORDED AS REVERSED, REGARDLESS OF THE PROVIDER'S STATE.
+        //
+        // This was a bug this change had to fix rather than carry forward. The status
+        // was `mayConvert ? 'VALIDATED' : 'RECEIVED'`, which would have recorded a
+        // reversal as RECEIVED - a live-looking value. Downgrading REVERSED to RECEIVED
+        // would misstate what the provider said and hide that a withdrawal was offered.
+        //
+        // The lifecycle gate governs whether an event may become MONEY. It has no
+        // business rewriting what the vendor asserted - the same reasoning that keeps a
+        // SUSPENDED provider's callback recorded rather than dropped.
+        p_status: mayConvert ? 'VALIDATED' : 'RECEIVED',
+        p_gross_value_minor: normalized.grossValueMinor ?? null,
+        p_currency: normalized.currency,
+        p_event_timestamp: normalized.eventTimestamp?.toISOString() ?? null,
+        p_normalized_payload: normalized.normalizedPayload,
+        p_correlation_id: args.correlationId,
+      };
+
+  const { data: recordResult, error } = await admin.rpc(
+    isReversal ? 'record_provider_reversal_conversion' : 'record_provider_conversion',
+    recordArgs,
+  );
 
   // The command returns a single jsonb object: `{ id, isDuplicate }`.
   //
@@ -344,6 +395,77 @@ async function persistConversion(args: {
     });
 
     return { outcome: 'REJECTED', reason: 'could not record conversion', verification: 'VERIFIED' };
+  }
+
+  // A REVERSAL IS ACTED ON HERE, AND ONLY HERE.
+  //
+  // Placed BEFORE the duplicate and user-resolution branches because both of those
+  // would otherwise return early and skip the clawback. A REPLAYED reversal is the
+  // common case - providers re-notify, and this callback is idempotent by design - so
+  // putting it after either branch would mean the second delivery did nothing.
+  //
+  // `apply_provider_reversal` is itself idempotent: the original is locked, and a
+  // conversion already marked REVERSED returns `alreadyReversed` without moving money
+  // again. Calling it unconditionally is therefore safe and is what makes the replay
+  // converge on the same answer as the first delivery.
+  //
+  // This runs BEFORE the provider-lifecycle gate, deliberately. A SUSPENDED or
+  // CANDIDATE provider pays nothing out, but it must still be able to claw back money
+  // already credited while it was LIVE. Gating reversals on `canProduceReward` would
+  // mean suspending a provider protects its payouts - the exact inverse of the intent.
+  if (isReversal) {
+    const reversal = await applyProviderReversal({
+      reversalConversionId: conversionId,
+      correlationId: args.correlationId,
+    });
+
+    if (reversal.error) {
+      // The conversion and its evidence are already recorded, so the withdrawal is not
+      // lost - it is reported as unapplied and can be retried from the audit trail.
+      // Raising here would be swallowed by the route and look identical to the
+      // silent-discard defect this path was written to eliminate.
+      logger.error(
+        'provider.reversal_apply_failed',
+        errorFields(reversal.error, {
+          providerCode: args.providerCode,
+          conversionId,
+        }),
+      );
+
+      await recordCallbackOutcome({
+        callbackId: args.callbackId,
+        processingResult: 'REJECTED',
+        reasonCode: 'REVERSAL_APPLY_FAILED',
+        conversionId,
+        correlationId: args.correlationId,
+      });
+
+      return {
+        outcome: 'REJECTED',
+        reason: 'reversal recorded but could not be applied',
+        verification: 'VERIFIED',
+      };
+    }
+
+    logger.warn('provider.conversion_reversed', {
+      providerCode: args.providerCode,
+      conversionId,
+      ...reversal.outcome,
+    });
+
+    // An unmatched reversal - the vendor withdrew a transaction we hold no conversion
+    // for - is recorded and reported, not discarded. It is the expected outcome while
+    // no provider is LIVE.
+    await recordCallbackOutcome({
+      callbackId: args.callbackId,
+      processingResult: recorded?.isDuplicate ? 'DUPLICATE' : 'ACCEPTED',
+      reasonCode:
+        reversal.outcome?.outcome === 'reversed' ? 'REVERSAL_APPLIED' : 'REVERSAL_UNMATCHED',
+      conversionId,
+      correlationId: args.correlationId,
+    });
+
+    return { outcome: 'ACCEPTED', conversionId, eligibleForReward: false };
   }
 
   if (recorded?.isDuplicate) {

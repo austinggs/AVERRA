@@ -122,6 +122,16 @@ export type CallbackVerification = {
 /** Doc 08 NORMALIZED EVENT. */
 export type NormalizedCallbackEvent = {
   providerEventId: string;
+  /**
+   * When this event REVERSES an earlier one, the provider's own id for the transaction
+   * being withdrawn. Null on an ordinary event.
+   *
+   * This is deliberately NOT a conversion id. The adapter only reads the provider's
+   * payload, so it cannot know which of our rows that transaction became - and it must
+   * not be allowed to guess. Resolution happens in `record_provider_conversion`, in the
+   * same transaction as the insert, where the link is authoritative.
+   */
+  reversesTransactionId?: string | null;
   sourceType: SourceType;
   campaignRef: string | null;
   userId: string | null;

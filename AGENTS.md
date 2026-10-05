@@ -111,9 +111,11 @@ state change. See docs/adr/.
   entitlements and donations tables; 041 the funding-spend commands and the three
   bounded read wrappers. A funding SPEND is a USER_FUNDING_SPEND DEBIT and never an
   earned reward; a donation record is acknowledgement and posts no ledger entry.
-- `supabase/tests/` - pgTAP suites (248 assertions, 12 files). Executed and green as
-  of CR-0017; run them with `npm run test:db`, which needs no Docker. Until then they
-  had NEVER run, and every one of the twelve held at least one defect.
+  057-058 append-only provider reversals. A provider withdrawal is its OWN conversion row
+  carrying a suffixed event identity, never an update to the completion.
+- `supabase/tests/` - pgTAP suites (436 assertions, 20 files). Executed and green as
+  of CR-0032; run them with `npm run test:db`, which needs no Docker. Earlier they had
+  NEVER run, and every one of them held at least one defect.
 - `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
   assertions, and on a plan that does not match the count executed.
 - `src/lib/auth/` - verified session and capability guards. Fail-closed.
@@ -201,6 +203,79 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
 - CR-0020 - Mining Game Three.js rendering layer (doc 17, 31). Additive: `GameShell`
   remains the single action path and was not modified.
 - CR-0021 - Review authoring commands and the reply outbox (doc 86). Migration 042.
+- CR-0032 - Append-only provider reversals. Migrations 057/058.
+
+## A provider withdrawal is a new row, not an UPDATE
+
+The rule that took three releases and a live postback to learn.
+
+CPX Research re-notifies a transaction when it detects fraud 15-60 days later, sending the
+**same `trans_id`** with `status=-2`. Law 5's unique index on
+`(provider_id, provider_event_id)` therefore returned the **original** conversion as a
+`DUPLICATE`, so the clawback was discarded with no reversal row, no `reverse_conversion`
+call, and no error anywhere - while the vendor's dashboard showed the reversal delivered.
+
+The obvious fix, letting the reversal `UPDATE` the original's status, is a financial
+rewrite (law 42). So the reversal is **its own conversion row**, with its own event
+identity and a `reverses_conversion_id` link.
+
+Three consequences, each of which will look like an unnecessary complication until one
+day it is not:
+
+1. **The suffix is part of the vendor value, verbatim.** `trans_id:-2` and `trans_id:2`
+   are distinct identities because CPX distinguishes `2` (cancelled) from `-2` (reversed).
+   A numeric comparison conflates them. And it is deterministic, so a provider that
+   re-notifies the same withdrawal still collapses onto the same row.
+2. **The link names the BARE `trans_id`.** The suffixed id exists only on the reversal;
+   the lookup searches for the completion.
+3. **The reversal inherits no user.** `user_id` and `tracking_id` are null. It withdraws
+   a conversion, it does not attribute a new one.
+
+Two ordering rules that are easy to get wrong and were both wrong here:
+
+- **Reversal handling goes BEFORE the duplicate early-return.** Re-notification is the
+  common case, so a branch placed after the duplicate check silently no-ops on every
+  replay.
+- **The lifecycle gate must not rewrite the vendor's status.** `p_status` was computed as
+  `mayConvert ? 'VALIDATED' : 'RECEIVED'`, which recorded a reversal as `RECEIVED` - a
+  live-looking value. The gate governs whether an event may become _money_; it has no
+  business rewriting what the vendor asserted.
+
+**Do not add a parameter to an existing command to carry this.** The first attempt
+appended `p_reverses_event_id` to migration 034's `record_provider_conversion`, and
+`check:migrations` refused the build: migration 035 is a `public` PostgREST wrapper that
+calls it with 14 positional arguments, so a 15th parameter compiles and then fails at
+runtime. Migration 034 stayed byte-identical and a separate command was added. See
+`docs/change-records/CR-0032-append-only-provider-reversals.md`.
+
+## `plan()` must be the first statement, and `col_is_fk` is not portable
+
+Four pgTAP facts that each cost a run against the deployed database. All are asserted in
+`supabase/tests/provider_reversal.sql`.
+
+1. **`select plan(n)` must precede EVERY assertion.** Placed after the first assertion,
+   the whole suite failed as `produced no assertions at all` - which reads like a suite
+   that never ran rather than an ordering mistake.
+2. **`col_is_fk` and `has_check` are absent from the deployed pgTAP build**, and their
+   arity varies between versions. Assert the same property with a query against
+   `pg_constraint` instead; it is version-proof.
+3. **`pg_constraint.consrc` was removed in PostgreSQL 12.** Use
+   `pg_get_constraintdef(oid)`. Note the extra parens it emits around a top-level `OR`.
+4. **`null_value_not_allowed` is a condition NAME for SQLSTATE 22004**, not a distinct
+   code. pgTAP compares the resolved SQLSTATE, so writing the name never matches, and a
+   blank-string rejection is 22004 rather than `null_value_not_allowed`.
+
+## The runner's rollback protects a PASSING suite only
+
+`tools/run-db-tests.mjs` wraps each suite in `begin; ... rollback;`. A suite that
+**errors** mid-way leaves its fixture rows committed - the transaction is already
+aborted, so the rollback restores nothing. Three aborted runs left three partial
+fixtures, and the next run then correctly reported the completion as a `DUPLICATE`.
+
+That is the worst shape a test failure can take: a failure caused by the _previous_
+failure, which reads as a real defect and invites someone to "fix" working code. Any suite
+that creates rows should delete its own prefix before it starts, and a leaked fixture is
+evidence about the suite that leaked it, not about the code under test.
 
 ## The reply outbox event is a trigger, on purpose
 

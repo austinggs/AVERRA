@@ -696,7 +696,10 @@ while Averra created nothing.
 2. **The fraud reversal would have been discarded entirely.** CPX reverses with
    `status=-2`, documented only in a second advisory panel, not in their field list.
    Matching `'2'` alone classified it UNKNOWN and dropped it with no conversion row, so
-   the 15-60 day clawback would have silently never happened.
+   the 15-60 day clawback would have silently never happened. Even once classified, the
+   reversal reuses the SAME `trans_id`, so law 5's unique index returned the original
+   conversion as a duplicate - also silently discarding it. **Fixed in CR-0032**; see
+   that session below.
 3. **The source-IP check compared the wrong machine.** The published whitelist was
    compared against `ip_click`, which is the _end user's_ address. The live postback came
    from `44.204.183.114`, which CPX does not publish - so gating on that list would have
@@ -742,3 +745,120 @@ because both the amount and the IP defect were invisible to invented payloads.
 Next atomic task: **ask CPX to confirm `status=1`, then build migration 057.** The
 reversal clawback is the only path by which money already credited comes back, and it
 does not exist yet.
+
+---
+
+## Session - 2026-10-04 - Append-only provider reversals (CR-0032)
+
+CR-0031 classified `status=-2` as a reversal and then stopped, because classifying it was
+not the same as being able to record it. It could not. This session closed that.
+
+**The defect that would have cost money.** CPX re-notifies a withdrawn transaction 15-60
+days later using the **same `trans_id`**. Law 5's unique index on
+`(provider_id, provider_event_id)` therefore returned the _original_ conversion as a
+`DUPLICATE`, and the fraud clawback was discarded with no reversal row, no
+`reverse_conversion` call, and no error anywhere - while CPX's dashboard showed the
+reversal delivered.
+
+This was survivable only by accident: while `cpx_research` is `CANDIDATE` no conversion
+becomes a reward, so there is nothing to claw back. The day a provider goes `LIVE` it
+stops being a no-op.
+
+**Why append-only.** Letting the reversal `UPDATE` the original row would be a financial
+rewrite (law 42): the row that said `VALIDATED` stops saying so, and the record of what
+the vendor originally asserted is gone. Law 7 wants a compensating event. So the reversal
+gets **its own row**, its own event identity (`trans_id:-2`), and a new self-referencing
+`reverses_conversion_id`. The original is marked `REVERSED` only by the command that has
+actually moved the money, never by the arrival of the notification.
+
+**The gate earned its place.** The first attempt appended a parameter to migration 034's
+`record_provider_conversion`. `check:migrations` refused the build:
+
+> migration 035 calls `record_provider_conversion` with 14 argument(s) but migration 057
+> declares 15 input parameter(s). This compiles and fails at runtime.
+
+Migration 035 is a `public` PostgREST wrapper passing 14 positional arguments, so this
+would have compiled and then failed at runtime. Migration 034 stays byte-identical and the
+new command is additive.
+
+**Two bugs found in existing code while doing it.**
+
+1. A reversal would have been downgraded to `RECEIVED`. `ingest.ts` computed
+   `p_status = mayConvert ? 'VALIDATED' : 'RECEIVED'`, so a reversal arriving while the
+   provider was not `LIVE` recorded as `RECEIVED` - a live-looking value.
+2. The clawback would have been skipped on **replay**. The reversal branch sits _before_
+   the duplicate and user-resolution early returns, because providers re-notify and the
+   second delivery must still claw back.
+
+**Deliberate non-gate.** `apply_provider_reversal` runs before `canProduceReward`. A
+`SUSPENDED` provider must still claw back money credited while it was `LIVE`; gating
+reversals on the lifecycle would mean suspending a provider _protects_ its payouts.
+
+**An unmatched reversal is recorded, not refused.** A vendor can withdraw a transaction
+whose completion never reached us. Raising would destroy the only evidence the withdrawal
+was offered - the exact mistake this migration exists to prevent. The row is written with
+a `NULL` link and the command reports `no_reward` rather than inventing an original.
+
+### Applied to the live database
+
+Migrations **057** and **058** are applied and recorded in `supabase_migrations`. `supabase
+db push` could not be used - it requires an interactive confirmation that will not run
+non-interactively - so they were applied with a throwaway script, which has since been
+deleted. **Recorded, not merely applied**: an unrecorded version would be re-applied by
+the next `db push`.
+
+Verified against the deployed database, not the files, per the applied-migration-is-frozen
+rule.
+
+### Verification
+
+| Gate                                   | Result                                                 |
+| -------------------------------------- | ------------------------------------------------------ |
+| `npm run test:db`                      | **20 suites, 436 assertions, 0 failures** (was 19/414) |
+| `npm test`                             | 19 files, 108 tests passing                            |
+| `npm run typecheck` / `lint` / `build` | clean                                                  |
+| `check:migrations`                     | 194 functions, 0 errors                                |
+| `check:grants`                         | 94 public functions, 0 errors                          |
+| `check:data-api`                       | 83 tables, no direct access                            |
+
+New suite `supabase/tests/provider_reversal.sql`, 22 assertions. **Both halves proven by
+re-injection**: restoring the bare `trans_id` fails three assertions with the core one
+reporting `have: true, want: false` - the duplicate-discard defect reproducing exactly.
+Reverting the adapter suffix fails the adapter-side assertion. Both restored, green
+re-confirmed.
+
+### Three pgTAP facts this suite established
+
+1. **`plan()` must precede every assertion.** It sat after the first assertion, and the
+   whole suite failed as `produced no assertions at all` - which reads like a suite that
+   never ran rather than an ordering mistake.
+2. **`col_is_fk`, `has_check` and `pg_constraint.consrc` do not exist here.** The first
+   two are absent from the deployed pgTAP build (and their arity varies between versions);
+   `consrc` was removed in PostgreSQL 12. All three assertions are rewritten against
+   `pg_constraint` and `pg_get_constraintdef`, which are version-proof.
+3. **`null_value_not_allowed` is a condition NAME for SQLSTATE 22004**, not a distinct
+   code, so a blank reason code and a NULL one both report `22004`.
+
+### A leaked-fixture defect, in the runner and in this suite
+
+Three aborted runs (the unavailable-pgTAP-function errors above) each committed a partial
+fixture. The runner wraps each suite in `begin/rollback`, which protects a **passing**
+suite only - a suite that _errors_ mid-way leaves rows behind. The next run then correctly
+reported the completion as a `DUPLICATE`: a failure caused by the previous failure, which
+is precisely what gets misread as a real defect. The three rows were deleted and the suite
+now deletes its own prefix first. **The 2 genuine live CPX conversions were untouched** -
+confirmed before and after.
+
+### What did not change, deliberately
+
+`cpx_research` is still `CANDIDATE`, all seven doc 07 gate timestamps are still null, and
+`provider:cpx_research` still does not exist. Migrations 057/058 make the clawback
+_possible_; they do not make it _reachable_, because no conversion can currently become
+money. Reversals also inherit no user (`user_id = null`, `tracking_id = null`): a reversal
+withdraws a conversion, it does not attribute a new one.
+
+Still blocked on **written confirmation from CPX about `status=1`**.
+
+Next atomic task: **issue the script tag and bind `subid_1`.** Every conversion currently
+lands as evidence with `UNRESOLVED_TRACKING_ID`, so nothing is payable end to end until a
+click can resolve a user.

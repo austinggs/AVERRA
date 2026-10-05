@@ -21,6 +21,15 @@
 -- one, and a plan placed after the first assertion fails the whole suite with
 -- "produced no assertions at all" - which reads like a suite that never ran rather than
 -- like an ordering mistake.
+-- The suite runs in its OWN transaction, declared HERE rather than left to the runner.
+--
+-- `tools/run-db-tests.mjs` does NOT wrap a suite in begin/rollback - every other suite
+-- in this directory declares its own. This file declared a trailing `rollback;` but no
+-- matching `begin;`, which PostgreSQL accepts as a no-op, so its whole fixture was
+-- COMMITTED to the live database on every green run. The three `pgtap-%` conversions
+-- it leaves behind are how that was found, during CR-0033.
+begin;
+
 select plan(22);
 
 select has_column(

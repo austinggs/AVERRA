@@ -112,10 +112,13 @@ state change. See docs/adr/.
   bounded read wrappers. A funding SPEND is a USER_FUNDING_SPEND DEBIT and never an
   earned reward; a donation record is acknowledgement and posts no ledger entry.
   057-058 append-only provider reversals. A provider withdrawal is its OWN conversion row
-  carrying a suffixed event identity, never an update to the completion.
-- `supabase/tests/` - pgTAP suites (436 assertions, 20 files). Executed and green as
-  of CR-0032; run them with `npm run test:db`, which needs no Docker. Earlier they had
-  NEVER run, and every one of them held at least one defect.
+  carrying a suffixed event identity, never an update to the completion. 059-062 the
+  settlement gate: AVAILABLE is unreachable except through a MATCHED provider settlement,
+  `expected_*` is computed rather than trusted, and tracking ids are server-minted CSPRNG.
+- `supabase/tests/` - pgTAP suites (472 assertions, 21 files). Executed and green as
+  of CR-0033; run them with `npm run test:db`, which needs no Docker. Earlier they had
+  NEVER run, and every one of them held at least one defect. Each suite declares its OWN
+  `begin;` - the runner does not add one.
 - `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
   assertions, and on a plan that does not match the count executed.
 - `src/lib/auth/` - verified session and capability guards. Fail-closed.
@@ -204,6 +207,7 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   remains the single action path and was not modified.
 - CR-0021 - Review authoring commands and the reply outbox (doc 86). Migration 042.
 - CR-0032 - Append-only provider reversals. Migrations 057/058.
+- CR-0033 - Settlement-gated attribution. Migrations 059-062.
 
 ## A provider withdrawal is a new row, not an UPDATE
 
@@ -276,6 +280,110 @@ That is the worst shape a test failure can take: a failure caused by the _previo
 failure, which reads as a real defect and invites someone to "fix" working code. Any suite
 that creates rows should delete its own prefix before it starts, and a leaked fixture is
 evidence about the suite that leaked it, not about the code under test.
+
+## AVAILABLE is settlement-gated, and the gate is a revoke
+
+Before CR-0033, `app_private.transition_reward` placed **no condition on `AVAILABLE`**.
+Migration 015's comment claimed a conversion "settles via transition_reward once
+settlement is confirmed" - that was a wish, not code. Any caller with EXECUTE could make
+a PENDING provider reward withdrawable before the provider paid.
+
+The fix closes the path from the OUTSIDE, using the CR-0028 `grant_reward` /
+`grant_reward_ungated` shape:
+
+- `transition_reward_ungated` holds the original body, **revoked from every role
+  including `service_role`**. This is the whole point: a `create or replace` under a new
+  name is a RENAME and carries the original ACL with it, so
+  `revoke ... from public, anon, authenticated` alone leaves `service_role` holding
+  EXECUTE and the gate is decorative.
+- `transition_reward` refuses `AVAILABLE` unconditionally - no parameter exists that
+  could wave it through, because there is no parameter at all.
+- only `settle_provider_period`, which demands a MATCHED settlement, reaches AVAILABLE.
+
+Asserted in `supabase/tests/provider_attribution.sql` for all three application roles,
+**and** it asserts those three roles still exist, so the check cannot pass vacuously if
+the list is later narrowed. `postgres` / `supabase_admin` are deliberately excluded: they
+own these tables and bypass ACL regardless of `rolsuper`, so asserting otherwise would be
+asserting something PostgreSQL does not promise.
+
+Verified by re-injection into the live database: re-granting EXECUTE, and reducing the
+gate to amount-only, both fail named assertions.
+
+## A partial settlement is not a settlement
+
+A report of 100 against our 90 settles **nothing**. Pro-rating would mean deciding which
+ten are real, and no evidence we hold distinguishes them. Holding money is recoverable;
+releasing money we cannot account for is not.
+
+Both the amount **and** the count must match. An amount that agrees while the count does
+not means our records describe a different set of events that totals the same - which is
+exactly what a forged conversion looks like from the settlement's side.
+
+`reconcile_provider_period` counts **CONVERTED** conversions only. Including `RECEIVED` or
+`VALIDATED` would report a variance every time we correctly declined to pay something,
+and a reconciliation that cries wolf is one nobody runs. Excluding `REVERSED` is what
+makes a forgery surface as a variance rather than being quietly absorbed.
+
+## A vendor that signs only its transaction id cannot authenticate attribution
+
+CPX signs `md5(trans_id + secure_hash)`. `subid_1` is **not covered by the signature**, and
+their `trans_id`s are sequential and therefore guessable. So the signature says who SENT
+the callback, never WHOSE click it was.
+
+Two mitigations, and the honest split between them:
+
+- **Unpredictable tracking ids** (`av_` + 128 CSPRNG bits, server-minted) raise the cost.
+  A client may never choose one - a client-chosen id is a sequential id by another name.
+- **The settlement gate** is what actually prevents money leaving.
+
+Unpredictability alone is NOT authentication. A forged `subid_1` naming a real, live
+tracking id still resolves to that user. Do not describe it as if it does not.
+
+## pgcrypto is in `extensions`, not `pg_catalog`
+
+On Supabase, `gen_random_bytes`, `digest` and friends live in a schema literally named
+`extensions`. A function with `set search_path = app, pg_catalog` therefore cannot see
+them.
+
+Migration 060 called `gen_random_bytes(16)` under exactly that search_path. It **applied
+cleanly**, every structural gate passed, and the function was dead on arrival. plpgsql
+bodies are not validated at CREATE, so the failure is deferred to first execution - which
+makes it the same class as the "language sql cannot reference a later-created table" rule,
+one step further out. Only a pgTAP assertion that actually **called** the function found
+it.
+
+A lint cannot see a missing schema in a search_path. Only execution can.
+
+## A suite must declare its OWN `begin;`, and the runner does not add one
+
+`tools/run-db-tests.mjs` does **not** wrap a suite in a transaction. Every suite declares
+its own, and `rollback;` without a preceding `begin;` is a **no-op PostgreSQL accepts
+silently**.
+
+`provider_reversal.sql` shipped that way in CR-0032, so its fixture was committed to the
+live database on **every green run**, and three `pgtap-%` conversions accumulated. It was
+found only because a later suite counted rows in a table it had not written to.
+
+New suites must open with `begin;` before `plan()`, and end with `finish();` then
+`rollback;` as the final statement. Check with:
+
+    Get-ChildItem supabase/tests/*.sql | ForEach-Object { $c=Get-Content $_.FullName -Raw; if($c -notmatch '(?m)^begin;'){ $_.Name } }
+
+## An append-only table blocks its own cascade
+
+`app.reward_state_transitions` is append-only via `reject_mutation`, and
+`ON DELETE CASCADE` from `app.rewards` fires that trigger too. So a leaked fixture reward
+**cannot be removed by any test suite at all** - the cleanup statement fails, the suite
+aborts, and the rollback that would have cleared it never runs.
+
+Cleaning one required a scoped, transactional
+`alter table ... disable trigger trg_reward_state_transitions_immutable`, the deletes,
+then re-enable before commit. Verify afterwards:
+
+    select tgenabled from pg_trigger where tgname = 'trg_reward_state_transitions_immutable';
+
+Expect `O`. This is another reason the `begin;` matters: a suite that cannot clean up
+becomes permanently unrunnable, not merely noisy.
 
 ## The reply outbox event is a trigger, on purpose
 

@@ -177,3 +177,37 @@ report is not, and that is a wall-clock wait on CPX rather than on engineering.
 Script-tag issuance and the CPX `createTrackingLink` are **not** in this change. They are
 deliberately last, and they should not ship before step 5, because issuance without
 written confirmation of `status=1` risks paying an unfinished survey.
+
+## CR-0033b - issuance built, still inert (migrations 063)
+
+Added after the above, as the planned second half.
+
+**What was built.** `public.get_offer_tracking_target` reads the destination from
+`offers.tracking_base_url` for an ACTIVE offer of a **LIVE** provider, returning NULL
+otherwise. `public.begin_provider_participation` forwards to the mint. The CPX adapter
+gained `createTrackingLink`, which puts the tracking id in `subid_1`, and
+`POST /api/providers/offers/[id]/click` ties them together.
+
+**It does nothing yet.** `cpx_research` is CANDIDATE, so `get_offer_tracking_target`
+returns NULL for every offer and the route answers 404. Building the path is not the same
+as enabling it, and that is asserted in `provider_attribution.sql` - including a CONTROL
+that the offer exists and is active, so the refusal is provably the LIVE gate rather than
+a broken lookup.
+
+**Three things the route will not do**, each asserted in `tests/providers/click-route.test.ts`:
+
+- It never reads a user id from the request body. `p_user_id` is the verified session.
+  Injecting the body-user defect fails four tests.
+- It never accepts a tracking id from the client. The id comes back from the database
+  mint, and a client cannot even supply one - there is no such parameter.
+- It creates no reward and touches no balance. Opening a link pays nothing.
+
+**One design decision worth recording.** `TrackingLinkInput.baseUrl` was added so the
+adapter reads the destination from OUR offer row. If the caller supplied the URL, a
+careless caller could send users anywhere while the participation recorded a real offer,
+and the postback would attribute the conversion to that offer. The base URL is
+configuration we own.
+
+**Verification.** 21 pgTAP suites / 479 assertions green (was 472). 20 vitest files.
+Both halves re-injected and restored: renaming `subid_1` fails three adapter tests;
+reading the user id from the body fails four route tests.

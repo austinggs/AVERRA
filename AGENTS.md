@@ -115,7 +115,9 @@ state change. See docs/adr/.
   carrying a suffixed event identity, never an update to the completion. 059-062 the
   settlement gate: AVAILABLE is unreachable except through a MATCHED provider settlement,
   `expected_*` is computed rather than trusted, and tracking ids are server-minted CSPRNG.
-- `supabase/tests/` - pgTAP suites (472 assertions, 21 files). Executed and green as
+  063 tracking-link issuance: the destination comes from OUR offer row and the wrapper
+  refuses any offer whose provider is not LIVE, so issuance is built but inert.
+- `supabase/tests/` - pgTAP suites (479 assertions, 21 files). Executed and green as
   of CR-0033; run them with `npm run test:db`, which needs no Docker. Earlier they had
   NEVER run, and every one of them held at least one defect. Each suite declares its OWN
   `begin;` - the runner does not add one.
@@ -207,7 +209,7 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   remains the single action path and was not modified.
 - CR-0021 - Review authoring commands and the reply outbox (doc 86). Migration 042.
 - CR-0032 - Append-only provider reversals. Migrations 057/058.
-- CR-0033 - Settlement-gated attribution. Migrations 059-062.
+- CR-0033 - Settlement-gated attribution. Migrations 059-063.
 
 ## A provider withdrawal is a new row, not an UPDATE
 

@@ -36,7 +36,7 @@
 -- `finish()`.
 begin;
 
-select plan(36);
+select plan(43);
 
 -- Defensive cleanup. This suite creates rows, and an ABORTED suite commits its
 -- fixture (the runner's rollback cannot undo an aborted transaction). See AGENTS.md.
@@ -140,13 +140,17 @@ delete from app.provider_settlements where provider_reference like 'pgattr-%';
 delete from app.provider_participations where tracking_id like 'pgattr-%';
 delete from app.provider_conversions where provider_event_id like 'pgattr-%';
 
+-- The fixture LIVE provider goes too. `offers` cascades from it, so deleting it removes
+-- its offers in one step - which is why it is deleted BEFORE the offer deletes below.
+delete from app.providers where code = 'pgattr_live';
+
 -- Rewards FIRST in the ordering, but see the warning: `app.reward_state_transitions` is
 -- append-only (`reject_mutation`), and ON DELETE CASCADE fires that trigger too, so a
 -- reward with history CANNOT be deleted by this suite at all. On a clean database there
 -- is no `pgattr-%` reward and this deletes zero rows harmlessly.
 delete from app.rewards where idempotency_key like 'pgattr-%';
 
-delete from app.offers where external_offer_id = 'pgattr-offer';
+delete from app.offers where external_offer_id in ('pgattr-offer', 'pgattr-live-offer');
 delete from app.reward_sources where name = 'pgTAP attribution source';
 
 -- LAST. The `auth.users` row cannot go while anything references it, so it is not a
@@ -511,6 +515,123 @@ select ok(
       and p.user_id = (select user_id from pgattr_fixture)
   ),
   'a minted participation is written and resolvable'
+);
+
+-- =============================================================================
+-- ISSUANCE IS INERT UNTIL THE PROVIDER IS LIVE (migration 063)
+--
+-- `createTrackingLink` is built and reachable, but nothing can click through while
+-- cpx_research is CANDIDATE. Asserted, because "the route exists" and "the route can
+-- be used" are different claims and only one of them is true today.
+-- =============================================================================
+
+-- A CANDIDATE provider's offer yields NO target. This is the whole gate: the wrapper
+-- returns NULL rather than raising, so the route answers 404 and an unauthenticated
+-- caller learns nothing about which offers exist.
+select is(
+  (
+    select public.get_offer_tracking_target(
+      (select id from app.offers where external_offer_id = 'pgattr-offer'
+        and provider_id = (select provider_id from pgattr_fixture))
+    )
+  ),
+  null::jsonb,
+  'a CANDIDATE provider offers no tracking target: the click route is inert'
+);
+
+-- The CONTROL. The offer is active and does exist - so the NULL above is the
+-- lifecycle gate doing its job, not a broken lookup or a missing fixture row.
+select ok(
+  exists (
+    select 1 from app.offers
+    where external_offer_id = 'pgattr-offer' and is_active
+  ),
+  'CONTROL: the offer exists and IS active - so the refusal is the LIVE gate, not absence'
+);
+
+-- An offer belonging to a DIFFERENT provider, given this one's id, also yields nothing.
+-- `get_offer_tracking_target` takes one argument, so this asserts the id is not
+-- reachable through any other path.
+select is(
+  (select public.get_offer_tracking_target(gen_random_uuid())),
+  null::jsonb,
+  'an unknown offer id yields no target'
+);
+
+-- Once the provider IS live, the same offer resolves. This is what makes the gate a
+-- real conditional rather than a permanent refusal - and it is asserted by flipping a
+-- fixture copy, never the real cpx_research row.
+-- INSERTED AS CANDIDATE, THEN PROMOTED IN A SEPARATE STATEMENT.
+--
+-- The first attempt inserted with `lifecycle_state = 'LIVE'` and every gate timestamp
+-- null, which fails `providers_live_requires_all_gates` - and that is the constraint
+-- working exactly as designed. It is also a good reminder that this schema will not let
+-- a provider go LIVE on a single statement that forgets its gates.
+insert into app.providers (code, display_name, provider_class, lifecycle_state)
+values ('pgattr_live', 'pgTAP live provider', 'SURVEY', 'CANDIDATE');
+
+update app.providers
+set lifecycle_state = 'LIVE',
+    settlement_currency = 'NGN-kobo',
+    integration_tested_at = now(),
+    callback_authenticity_tested_at = now(),
+    duplicate_replay_tested_at = now(),
+    economic_validated_at = now(),
+    commercial_approved_at = now(),
+    compliance_approved_at = now(),
+    last_verified_at = now(),
+    verification_expires_at = now() + interval '90 days'
+where code = 'pgattr_live';
+
+-- The promotion actually took, so the assertions below are testing a LIVE provider
+-- rather than a CANDIDATE one that happens to satisfy some other condition.
+select is(
+  (select lifecycle_state::text from app.providers where code = 'pgattr_live'),
+  'LIVE'::text,
+  'CONTROL: the fixture provider really is LIVE, so the gate test below is meaningful'
+);
+
+insert into app.offers (
+  provider_id, external_offer_id, title, is_active, tracking_base_url
+)
+select id, 'pgattr-live-offer', 'pgTAP live offer', true,
+  'https://offers.example.invalid/x?pub_id=7'
+from app.providers where code = 'pgattr_live';
+
+select is(
+  (
+    select public.get_offer_tracking_target(
+      (select id from app.offers where external_offer_id = 'pgattr-live-offer')
+    ) ->> 'providerCode'
+  ),
+  'pgattr_live'::text,
+  'a LIVE provider does yield a tracking target: the gate is a conditional'
+);
+
+-- The target carries the configured destination. The base URL must come from OUR row,
+-- never from the caller, or a callback could be attributed to the wrong offer.
+select is(
+  (
+    select public.get_offer_tracking_target(
+      (select id from app.offers where external_offer_id = 'pgattr-live-offer')
+    ) ->> 'trackingBaseUrl'
+  ),
+  'https://offers.example.invalid/x?pub_id=7'::text,
+  'the target carries OUR configured base URL, so the link cannot be redirected'
+);
+
+-- Deactivating the offer closes it again, without touching the provider state.
+update app.offers set is_active = false
+where external_offer_id = 'pgattr-live-offer';
+
+select is(
+  (
+    select public.get_offer_tracking_target(
+      (select id from app.offers where external_offer_id = 'pgattr-live-offer')
+    )
+  ),
+  null::jsonb,
+  'an inactive offer yields no target even from a LIVE provider'
 );
 
 -- Nothing here creates a reward source or promotes a provider. Asserted, because

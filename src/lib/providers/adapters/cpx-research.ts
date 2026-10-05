@@ -33,6 +33,8 @@ import type {
   NormalizedCallbackEvent,
   ProviderAdapter,
   RawCallback,
+  TrackingLink,
+  TrackingLinkInput,
 } from '@/lib/providers/types';
 import { parseAmountMinor, requireString } from '@/lib/providers/normalize';
 import {
@@ -228,6 +230,50 @@ export function createCpxAdapter(): ProviderAdapter {
           clickIp: clickIp ?? null,
           eventTimeProvidedByProvider: false,
         },
+      };
+    },
+
+    /**
+     * Builds the click-through URL for a survey.
+     *
+     * THE ONE JOB HERE IS CARRYING `subid_1`.
+     *
+     * `subid_1` is the field CPX echoes back on the postback, and `handleCallback` reads
+     * it as `trackingId`. Empty `subid_1` is precisely why every conversion so far has
+     * landed with `UNRESOLVED_TRACKING_ID` - the provider had no way to tell us which
+     * click it was reporting.
+     *
+     * SO WHY IS THE CLICK NOT AUTHENTICATED BY IT?
+     *
+     * CPX signs `md5(trans_id - secure_hash)`. `subid_1` is not in that input, so a
+     * signature proves a callback came from CPX; it does not prove the `subid_1` inside
+     * it is the one we sent. This raises the cost of a forgery - the tracking id is 128
+     * CSPRNG bits, minted server-side, never chosen by a client - and the settlement gate
+     * (migration 059) is what actually stops money leaving. Do not describe this link as
+     * making attribution authenticated. It does not.
+     *
+     * The base URL comes from `offers.tracking_base_url` via
+     * `public.get_offer_tracking_target`, which only returns rows for an ACTIVE offer of
+     * a LIVE provider. So an unconfigured or non-live offer yields no URL at all rather
+     * than a link to nowhere.
+     */
+    createTrackingLink: async (input: TrackingLinkInput): Promise<TrackingLink> => {
+      if (!input.baseUrl) {
+        throw new Error(
+          'cpx: no tracking base URL is configured for this offer, so no link can be built',
+        );
+      }
+
+      const base = new URL(input.baseUrl);
+
+      // `subid_1` is CPX's documented name for it. Preserving any query the base URL
+      // already carries is why this goes through URL rather than string concatenation -
+      // concatenating onto a URL that already has a `?` produces a broken second query.
+      base.searchParams.set('subid_1', input.trackingId);
+
+      return {
+        trackingId: input.trackingId,
+        url: base.toString(),
       };
     },
   };

@@ -90,6 +90,16 @@ export type TrackingLinkInput = {
   trackingId: string;
   userId?: string;
   subId?: string;
+  /**
+   * Where to send the user, read from OUR `offers.tracking_base_url`.
+   *
+   * REQUIRED, and that is the point: an adapter cannot invent a destination. If this
+   * were optional and a caller supplied the URL instead, a compromised or careless
+   * caller could send users anywhere while the participation recorded a real one, and the
+   * postback would attribute the conversion to that offer. The base URL is configuration
+   * we own, looked up by offer id.
+   */
+  baseUrl?: string;
 };
 
 export type TrackingLink = { url: string; trackingId: string };

@@ -862,3 +862,124 @@ Still blocked on **written confirmation from CPX about `status=1`**.
 Next atomic task: **issue the script tag and bind `subid_1`.** Every conversion currently
 lands as evidence with `UNRESOLVED_TRACKING_ID`, so nothing is payable end to end until a
 click can resolve a user.
+
+---
+
+## Session - 2026-10-05 - The settlement gate (CR-0033)
+
+### In plain terms
+
+CPX only signs the transaction number. It does **not** sign `subid_1`, which is the field
+that tells us _whose_ click it was. Once we start putting real user tracking codes in
+`subid_1`, anyone who can guess a transaction number could send us a fake callback naming
+someone else's code and get that person credited.
+
+Today that cannot happen, but only by accident: nothing has been payable yet. This session
+removed the accident and put real protection in place.
+
+### What was wrong
+
+**1. A reward could be made spendable without CPX paying.** We had a rule written in a
+comment saying a conversion "settles once settlement is confirmed", but there was no code
+behind it. Any part of our system with permission could mark a reward as spendable before
+CPX paid us. Nobody had, and CPX is not live, so no money was at risk - but that was luck,
+not safety.
+
+**2. Our own reconciliation could not catch a fake.** There was a column meant to hold what
+_we_ think CPX owes us. It was labelled "computed, not trusted" - and nothing computed it.
+So every CPX report would have looked like it matched, even a fake one.
+
+**3. Tracking codes could never work.** The function that turns a tracking code into a user
+has always worked correctly, but nothing had ever created a tracking code. So it never
+actually resolved anyone.
+
+### What was fixed
+
+- **Rewards now need a real settlement.** Only the new settlement process can make a
+  reward spendable, and only when CPX's report matches our own records _exactly_.
+- **A partial match settles nothing.** If CPX reports 100 and we recorded 90, we release
+  nothing at all. They do not pay us, until the difference is understood.
+- **Both the amount and the count must match.** Same total from different events is exactly
+  what a fake looks like.
+- **We now mint the tracking codes ourselves** - 128 random characters, generated on the
+  server. A browser can never choose its own.
+
+### Two honest cautions
+
+Random tracking codes make faking harder. They do **not** make it impossible. CPX simply
+does not sign that field, so nothing we build can make it fully trustworthy. The
+settlement gate is what actually stops money leaving.
+
+And proving reconciliation against a **real** CPX report still has to wait for CPX's
+reporting period to close. We have proven it against our own test data. That is half the
+job, and the other half is a waiting game.
+
+### A test that had been writing to the live database
+
+Last session's reversal test file was missing its opening line that rolls everything back.
+Postgres accepted it silently, so every green test run **saved its test data to the real
+database**. Three leftover rows had piled up. Found because the new test checked a table it
+had not written to and found rows it did not recognise. Fixed, and the leftovers removed.
+
+### Numbers
+
+| Check                                        | Result                            |
+| -------------------------------------------- | --------------------------------- |
+| Database tests                               | 21 files, 472 checks, all passing |
+| App tests                                    | 19 files, all passing             |
+| Type check, lint, build                      | clean                             |
+| Migration, permission and data-access checks | clean                             |
+
+### Still not done, and why
+
+CPX is still not live. It has no funding source, so it cannot pay anything. No approval
+records were written.
+
+**The two things still blocking us**, neither of which is engineering:
+
+1. **CPX must confirm what `status=1` means.** They say "completed" in one place and
+   "pending" in another. If it can mean pending, we could pay for a survey nobody finished.
+2. **CPX's first real settlement report** has to arrive so reconciliation can be proven
+   for real.
+
+Next atomic task: **ask CPX to confirm `status=1`, and ask when their settlement reports
+arrive.** Both are emails, and both are on the critical path.
+
+---
+
+## Session - 2026-10-05 - Click links built, but switched off (CR-0033 part 2)
+
+### In plain terms
+
+We can now build the link a person clicks to start a survey, and that link carries the
+tracking code back to us. That is the piece that was missing - it is why every CPX
+conversion so far has arrived with no idea who it belonged to.
+
+**But nothing can use it yet.** CPX is still not live, so the link-building endpoint
+returns "not found" for every offer. This was deliberate: we built the road, and left the
+gate closed.
+
+### Three things the click endpoint refuses to do
+
+1. **It never trusts a user ID from the browser.** It uses the signed-in session only.
+   I tested this by breaking it on purpose - four tests failed, then I put it back.
+2. **It never accepts a tracking code from the browser.** The code comes from the
+   database. The browser cannot even send one.
+3. **It pays nothing.** Opening a link is not a conversion, and a conversion is not a
+   payment. All three are separate steps on purpose.
+
+### Numbers
+
+| Check           | Result                            |
+| --------------- | --------------------------------- |
+| Database tests  | 21 files, 479 checks, all passing |
+| App tests       | 20 files, all passing             |
+| Everything else | clean                             |
+
+### What is left
+
+The same two things as above, and only those two: **CPX confirming `status=1`**, and
+**CPX's first real settlement report**.
+
+Next atomic task: **send those two questions to CPX.** Nothing further can be built until
+one of them is answered - everything on our side is now done and switched off.

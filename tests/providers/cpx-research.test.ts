@@ -517,6 +517,82 @@ describe('the live CPX postback of 2026-10-04', () => {
     expect(cpxReversalEventId('abc', '2')).not.toBe(cpxReversalEventId('abc', '-2'));
   });
 
+  // ===========================================================================
+  // createTrackingLink - the subid_1 carrier (migration 063)
+  // ===========================================================================
+
+  describe('createTrackingLink', () => {
+    // The whole point of the link. Empty `subid_1` is what left every conversion as
+    // `UNRESOLVED_TRACKING_ID`, so this is the field that ends that.
+    it('carries the tracking id in subid_1, which the postback echoes back', async () => {
+      const link = await createCpxAdapter().createTrackingLink!({
+        externalId: '123',
+        trackingId: 'av_0123456789abcdef0123456789abcdef',
+        baseUrl: 'https://offers.cpx-research.invalid/click',
+      });
+
+      expect(link.url).toContain('subid_1=av_0123456789abcdef0123456789abcdef');
+      expect(link.trackingId).toBe('av_0123456789abcdef0123456789abcdef');
+    });
+
+    // A base URL that already carries a query string must survive. String
+    // concatenation onto `...?pub_id=7` produces a broken second `?`, which is exactly
+    // the kind of defect that shows up only in production traffic.
+    it('preserves a query already present on the base URL', async () => {
+      const adapter = createCpxAdapter();
+
+      const link = await adapter.createTrackingLink!({
+        externalId: '123',
+        trackingId: 'av_abc',
+        baseUrl: 'https://offers.cpx-research.invalid/click?pub_id=7&aff=9',
+      });
+
+      const url = new URL(link.url);
+      expect(url.searchParams.get('pub_id')).toBe('7');
+      expect(url.searchParams.get('aff')).toBe('9');
+      expect(url.searchParams.get('subid_1')).toBe('av_abc');
+      // Exactly one query string, not two concatenated ones.
+      expect(link.url.split('?').length).toBe(2);
+    });
+
+    // The tracking id is minted server-side and is hex. Percent-encoding it keeps a
+    // future format change from silently corrupting the URL.
+    it('URL-encodes the tracking id rather than pasting it in', async () => {
+      const link = await createCpxAdapter().createTrackingLink!({
+        externalId: '123',
+        trackingId: 'av_has spaces&symbols=1',
+        baseUrl: 'https://offers.cpx-research.invalid/click',
+      });
+
+      expect(link.url).not.toContain('spaces&symbols=1');
+      expect(new URL(link.url).searchParams.get('subid_1')).toBe('av_has spaces&symbols=1');
+    });
+
+    // No configured destination means no link. Falling back to something would send a
+    // user onward with no attribution - the exact state this work exists to end.
+    it('refuses to build a link with no configured base URL', async () => {
+      await expect(
+        createCpxAdapter().createTrackingLink!({
+          externalId: '123',
+          trackingId: 'av_abc',
+        }),
+      ).rejects.toThrow(/no tracking base URL/);
+    });
+
+    // A destination the client could influence would let a caller send users anywhere
+    // while the participation recorded a real offer. The URL comes from our own
+    // `offers.tracking_base_url`, so this asserts the input shape has no other channel.
+    it('takes the destination only from the supplied base URL', async () => {
+      const link = await createCpxAdapter().createTrackingLink!({
+        externalId: '123',
+        trackingId: 'av_abc',
+        baseUrl: 'https://offers.cpx-research.invalid/click',
+      });
+
+      expect(new URL(link.url).host).toBe('offers.cpx-research.invalid');
+    });
+  });
+
   it('verifies the real signature when the live secret is available', async () => {
     const liveSecret = process.env.CPX_LIVE_SECRET;
     if (!liveSecret) return;

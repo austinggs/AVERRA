@@ -1997,3 +1997,44 @@ generic field name is not evidence that a vendor uses it. Read the vendor's fiel
 before comparing anything to a value in it, and check that the test's fixture places the
 value in the field it will actually arrive in - a test that feeds the wrong field asserts
 the defect rather than catching it.
+
+## Q-45 - a migration shipped a protection the money path never called
+
+**Status:** corrected. The SQL is applied and stays byte-identical; the fix is a
+one-line TypeScript rewire plus a test that pins the wire.
+
+Migration 060 (CR-0033) built `public.resolve_tracking_user_for_attribution` - the
+liveness-aware resolver that refuses dead participations - and its header comment
+made two claims. Both were false:
+
+1. "Nothing new routes through [the old wrapper]" - in the sense the author meant
+   (the old wrapper fades out of use), this never happened.
+   `src/lib/providers/ingest.ts` still called migration 034's
+   `resolve_tracking_user`, which has no status filter and resolves ANY
+   participation row, live or dead. A callback naming a finished participation's
+   tracking id still attributed to that user - the exact window the new function
+   was written to close. The protection existed in the database and was not
+   wired into the path that needed it. Nothing in `src/` called the new
+   function at all.
+2. "The attribution suite asserts that the new path is the one in use."
+   `supabase/tests/provider_attribution.sql` calls the new SQL function
+   directly. That proves the function correct, not that the money path reaches
+   it. No test covered the TypeScript side.
+
+The old ingest comment compounded this by overclaiming in the other direction:
+"a forged callback naming somebody else's tracking id resolves to nobody".
+Under the old wrapper that is false for a live participation; under either
+wrapper it is false for a VALID, LIVE tracking id of another user.
+Unpredictability narrows that window; the settlement gate is what stops money
+leaving. Both halves of the comment now say exactly what they mean.
+
+**Verification.** `tests/providers/ingest-attribution.test.ts` proves ingest
+CALLS the new wrapper by name, never calls the legacy one (exact equality, not
+a substring - the new name contains the old one), and records a null resolution
+as `UNRESOLVED_TRACKING_ID` rather than dropping it. The defect was re-injected
+(`resolve_tracking_user`) and all three tests fail; restored, all pass.
+
+**The rule.** A comment claiming a path is in use is not evidence it is. When a
+new function replaces an old one across a language boundary - SQL one side,
+TypeScript the other - no test on either side alone proves the wire. The test
+must name the callee the production code actually reaches.

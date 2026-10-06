@@ -272,16 +272,23 @@ async function persistConversion(args: {
   let userId: string | null = null;
 
   if (normalized.trackingId) {
-    // Routed through `public.resolve_tracking_user`, NOT
+    // Routed through `public.resolve_tracking_user_for_attribution`, NOT
     // `.from('provider_participations')`. The `app` schema is not exposed through
     // the Data API.
     //
-    // The wrapper returns ONLY a user id, and takes the provider id alongside the
-    // tracking id. That is what makes this safe: the provider never dictates which
-    // user this is. The user is resolved from OUR attribution table using an
-    // identifier WE minted, so a forged callback naming somebody else's tracking
-    // id resolves to nobody rather than to that other account.
-    const { data: resolved } = await admin.rpc('resolve_tracking_user', {
+    // The LIVENESS-AWARE wrapper (migration 060), not migration 034's
+    // `resolve_tracking_user`: the old one has no status filter and resolves ANY
+    // participation row, live or dead, so a late or replayed callback naming a
+    // finished participation would still attribute to that user. The new one
+    // resolves only while the participation is STARTED or QUALIFIED and returns
+    // nobody otherwise - which the pipeline below records as
+    // UNRESOLVED_TRACKING_ID rather than discarding (see Q-45).
+    //
+    // What this does NOT promise: a forged callback naming a VALID, LIVE tracking
+    // id of another user still resolves to them, under either wrapper.
+    // Unpredictability narrows that window; the settlement gate is what stops
+    // money leaving.
+    const { data: resolved } = await admin.rpc('resolve_tracking_user_for_attribution', {
       p_provider_id: args.providerId,
       p_tracking_id: normalized.trackingId,
     });

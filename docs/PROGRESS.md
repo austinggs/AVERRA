@@ -983,3 +983,35 @@ The same two things as above, and only those two: **CPX confirming `status=1`**,
 
 Next atomic task: **send those two questions to CPX.** Nothing further can be built until
 one of them is answered - everything on our side is now done and switched off.
+
+---
+
+## Session - 2026-10-06 - Ingest now uses the liveness-aware resolver (Q-45)
+
+### In plain terms
+
+Last session built a smarter lookup: when a survey provider reports a completed
+survey, we check the tracking code is still live before crediting anyone. But the
+code that handles real callbacks was still calling the old lookup, which answers
+for finished trackings too. The protection existed and was never used. It is now
+wired in: one line in `src/lib/providers/ingest.ts`.
+
+### What was wrong
+
+Migration 060's comment claimed the new path was the one in use. It was not -
+nothing in `src/` called the new function, and the database test only proves the
+function correct, not that the money path reaches it. Recorded as Q-45 in
+`docs/DISCREPANCIES.md`.
+
+### Verification
+
+New `tests/providers/ingest-attribution.test.ts` (3 tests) proves ingest calls
+the new wrapper by exact name, never the legacy one, and records a dead
+participation as `UNRESOLVED_TRACKING_ID`. Re-injected the old call: all 3 fail.
+Restored: all pass. Provider suite 126/126, typecheck, lint, `check:data-api`
+and `check:grants` clean. No migration touched (060 is applied and frozen).
+
+### What is left
+
+Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement
+report**. Both are emails, and both are on the critical path.

@@ -117,7 +117,7 @@ state change. See docs/adr/.
   `expected_*` is computed rather than trusted, and tracking ids are server-minted CSPRNG.
   063 tracking-link issuance: the destination comes from OUR offer row and the wrapper
   refuses any offer whose provider is not LIVE, so issuance is built but inert.
-- `supabase/tests/` - pgTAP suites (479 assertions, 21 files). Executed and green as
+- `supabase/tests/` - pgTAP suites (513 assertions, 22 files). Executed and green as
   of CR-0033; run them with `npm run test:db`, which needs no Docker. Earlier they had
   NEVER run, and every one of them held at least one defect. Each suite declares its OWN
   `begin;` - the runner does not add one.

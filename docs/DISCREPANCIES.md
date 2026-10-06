@@ -2038,3 +2038,47 @@ as `UNRESOLVED_TRACKING_ID` rather than dropping it. The defect was re-injected
 new function replaces an old one across a language boundary - SQL one side,
 TypeScript the other - no test on either side alone proves the wire. The test
 must name the callee the production code actually reaches.
+
+## Q-46 - the only path a provider event becomes money had never been executed by a test
+
+**Status:** corrected by `supabase/tests/provider_live_gate.sql` (34 assertions, green in
+a 22-suite / 513-assertion run). No migration and no source file changed.
+
+Found 2026-10-06, during the CPX CANDIDATE->LIVE migration audit: the question "what
+happens if `cpx_research` is promoted tomorrow?" has three code answers, and none of
+them had behavioural coverage.
+
+1. **`public.apply_conversion_reward`** - migration 015's own header calls it "the ONLY
+   place a provider event becomes money". Its entire previous coverage was one grants
+   assertion in `providers.sql` (the function exists, and anon cannot execute it). A
+   grants test proves who may call; it never proves what happens when they do. The five
+   refusals (unknown conversion `23503`; non-VALIDATED status; non-LIVE provider; no
+   resolved user; NULL funding source `22004`), the happy path (grant, budget decrement,
+   exactly one ledger entry, outbox event, audit event, CONVERTED, PENDING) and
+   idempotent replay were asserted nowhere.
+2. **`public.list_live_offers()` / `public.list_live_surveys()`** - the earn-page
+   listing gate (`is_active AND lifecycle_state = 'LIVE'`, migration 031) had zero
+   assertions on either wrapper. A filter that silently stopped filtering would have
+   shipped green: every existing test returns the same result either way.
+3. **`public.get_active_provider_reward_source()`** - returned an id no test checked.
+   Whether an INACTIVE source is refused, and whether an unknown provider code returns
+   null (leaving the conversion recorded and UNPAID), was unproven.
+
+This is the same shape as Q-27 and Q-45: coverage that was assumed rather than
+exercised, and therefore counted as assurance without being any.
+
+**Verification.** The new suite runs against fixture rows only (`pglive_` provider
+codes, one fixture auth user; the deployed `cpx_research` row is never touched). Each
+of the five refusal fixtures breaks exactly ONE precondition, in the order the
+function checks them, so the exact SQLERRM identifies the rule that fired rather than
+whichever PostgreSQL evaluates first (Q-24, Q-27). Every population is counted beside
+its gate test - the `0 bad` rule - including a 6-row privilege population with a
+service_role control so the zero cannot be vacuous. The happy path captures a ledger
+baseline in a temporary table so "+1 entry" counts only its own transaction, and the
+replay proves no second spend. Full run: 22/22 suites, 513 assertions, 0 failures.
+
+**The rule.** Grants coverage is not behavioural coverage, and a wrapper with no test
+anywhere is indistinguishable from a wrapper tested elsewhere - both read green. Before
+trusting a gate, name the test that FAILS when the gate is removed. If no such test
+exists, that absence is the finding.
+

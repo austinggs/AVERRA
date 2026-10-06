@@ -1015,3 +1015,93 @@ and `check:grants` clean. No migration touched (060 is applied and frozen).
 
 Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement
 report**. Both are emails, and both are on the critical path.
+
+---
+
+## Session - 2026-10-06 - CPX CANDIDATE->LIVE audit closed: the listing gate and the money bridge (Q-46)
+
+### In plain terms
+
+The audit asked one question: if somebody flips `cpx_research` to LIVE tomorrow, what
+actually happens? Three code answers exist, and none of them had ever been executed by
+a test - only a grants assertion. Both untested paths are now covered by a new suite,
+`supabase/tests/provider_live_gate.sql` (34 assertions), and the full database run is
+green: **22 files, 513 checks, 0 failures**. The gaps are recorded as Q-46 in
+`docs/DISCREPANCIES.md`. No migration and no source file changed.
+
+### The consolidated CANDIDATE->LIVE gate checklist
+
+Everything the audit proved, in the order the database enforces it.
+
+**Before the promotion - a single UPDATE fails without these:**
+
+1. Seven doc 07 timestamps on the row (`providers_live_requires_all_gates`):
+   `integration_tested_at`, `callback_authenticity_tested_at`,
+   `duplicate_replay_tested_at`, `economic_validated_at`, `commercial_approved_at`,
+   `compliance_approved_at`, `last_verified_at`.
+2. `verification_expires_at` set (`providers_live_requires_expiry`) and later than
+   `last_verified_at` (`providers_expiry_after_verification`).
+3. Nothing else is enforced by the promotion. `settlement_currency` is set by the
+   promotion idiom, not by a constraint - do not mistake convention for a gate.
+
+**Needed for money to flow - deliberately NOT part of the promotion:**
+
+4. An ACTIVE reward source named `provider:cpx_research` with budget. Without it
+   `apply_conversion_reward` raises `22004` (law 10): the conversion is recorded and
+   stays UNPAID. The lookup returns only an id, only for an ACTIVE source, and null for
+   an unknown code. [new suite: 4 assertions]
+5. Conversions must resolve a user (click links, CR-0033) and arrive `VALIDATED`
+   (ingest's `canProduceReward`; `status=1` semantics still awaiting CPX).
+
+**What flips on the moment `lifecycle_state = 'LIVE'`:**
+
+6. Earn-page listing: active offers and surveys appear in `list_live_offers` /
+   `list_live_surveys`; inactive rows stay hidden. [new suite: 6 assertions, each
+   preceded by a population control so "hidden" cannot pass because the row was never
+   created]
+7. Click-link issuance - migration 063 refuses any offer whose provider is not LIVE,
+   so the road built last session opens with the promotion.
+8. `apply_conversion_reward` will pay: VALIDATED + LIVE + resolved user + positive
+   amount + currency + funding source -> `grant_reward` -> reward `PENDING`,
+   conversion `CONVERTED` and linked, budget decremented by exactly the amount,
+   exactly one ledger entry, one outbox event, one audit event - and a replay returns
+   the SAME reward, spending nothing and writing nothing. [new suite: 5 refusals +
+   9 happy-path + 3 replay assertions]
+
+**What stays gated even after LIVE:**
+
+9. WITHDRAWABLE. The reward lands `PENDING`; only a MATCHED settlement moves it to
+   `AVAILABLE` (CR-0033). Going LIVE does not make anything withdrawable by itself.
+10. The risk gate can still block a new credit before any write. The happy path pins
+    the safe case: a fresh user has no `risk_decisions` row -> null -> grant proceeds.
+11. SUSPENDED blocks paying but never clawing back: reversals deliberately run before
+    the lifecycle gate (CR-0032).
+
+**Still blocking, and neither is engineering:**
+
+12. CPX written confirmation of what `status=1` means.
+13. CPX's first real settlement report.
+
+### What the new suite is worth
+
+`cpx_research` is never touched - everything runs on `pglive_` fixture rows and one
+fixture auth user, and the suite deletes its own prefix first so an aborted run cannot
+poison the next one. The breakdown: 5 fixture population controls, 6 listing-gate
+assertions, 2 privilege assertions over a population of 6 (with a service_role control
+so the zero cannot be vacuous), 4 funding-source lookup assertions, 5 exact-SQLERRM
+refusals (each fixture breaks exactly ONE precondition), 9 happy-path assertions, 3
+replay assertions.
+
+### Numbers
+
+| Check                                     | Result                             |
+| ----------------------------------------- | ---------------------------------- |
+| Database tests                            | 22 files, 513 checks, all passing  |
+| TypeScript, migrations, source            | unchanged this session             |
+| `AGENTS.md` test count                      | updated 479/21 -> 513/22           |
+
+### What is left
+
+Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement
+report**. Both are emails, and both are on the critical path.
+

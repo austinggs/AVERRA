@@ -1105,3 +1105,96 @@ replay assertions.
 Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement
 report**. Both are emails, and both are on the critical path.
 
+
+---
+
+## Session - 2026-10-06 - CPX outreach draft, CPX stats key, and the navigation rework (CR-0034)
+
+### In plain terms
+
+Three small things, done in order. (1) The CPX go-live email is drafted and saved for a
+human to send - three questions, no secrets in it. (2) The new CPX statistics API key was
+stashed where keys belong (`.env.local`, gitignored, never in a repo file) and
+`check:bundle` proves it does not reach the client. (3) The navigation was reworked:
+desktop now has a real top nav in the sticky header, and the mobile bar dropped from
+nine cramped tabs to six plus a "More" sheet.
+
+### 1. CPX outreach - `docs/outreach/cpx-go-live-confirmation.md`
+
+A human-reviewed draft (doc 78: production support comms are never AI-generated; the file
+says so on its face) asking the three questions that remain before CANDIDATE -> LIVE:
+
+1. **What does `status=1` mean?** The integration note says "1 = completed", the callback
+   docs say `&status=1` is *pending*. We need it in writing that `status=1` +
+   `type=com[plete]` is a completed, payable conversion.
+2. **The first settlement report** - our settlement gate makes rewards withdrawable only
+   from a matched report, so the first report closes the loop from day one.
+3. **Offer/survey catalogue delivery** - how CPX's catalogue reaches our Earn section.
+   Their documented `get-surveys` API is *per-user* with a 120-second cache rule, which
+   shapes the loader we still have to build (nothing seeds `app.offers`/`app.surveys`
+   today - promotion alone would light up an empty set).
+
+A fabricated `app_id` was caught and removed before saving: the number goes in the
+subject line from the publisher panel (or the deployment's `CPX_APP_ID`, which exists
+there but not in local env) - never guessed, per the same rule as token addresses.
+
+### 2. CPX statistics API key
+
+`CPX_STATS_API_KEY` added to `.env.local` only. It is gitignored (verified with
+`git check-ignore`), it appears in no source file, no doc and no test, and
+`check:bundle` scanned 26 client assets with **no secrets found**. The key is now also
+in the chat transcript it was pasted into; the operator decided no rotation is needed,
+and that decision is recorded here so it is deliberate rather than forgotten.
+
+### 3. Navigation rework - CR-0034
+
+Full record in `docs/change-records/CR-0034-responsive-navigation.md`. Summary:
+
+- **Desktop:** `TopNav` in the sticky header (was: a `md:static` footer row - you had
+  to scroll to the bottom of every page to navigate). Icon pills at md-lg, labels from
+  xl, header widens to `lg:max-w-7xl` while `main` keeps its `max-w-3xl` measure.
+- **Mobile:** `BottomNav` is now < md only: six core tabs (~53px each at 320px, the old
+  nine were ~35px and broke the 44px tap rule) plus a "More" sheet with proper modal
+  semantics - `role="dialog"`, `aria-modal`, Escape/backdrop close, focus trap and
+  restore, scroll lock, closes on route change, aggregated badge with sr-only count.
+- The split lives as data in `navItems.ts`; both navs share `NavIcon`/`NavBadge`/
+  `isActive` so they cannot drift.
+
+### Tests - the named failures (Q-46 rule)
+
+`tests/ui/navigation.test.tsx` (**13 tests**) and `tests/e2e/smoke.spec.ts`
+(**3 specs x 2 projects**). Remove a gate, see the named test fail:
+
+| Gate removed | Test that fails |
+| --- | --- |
+| seventh core tab added (tap rule breaks again) | `core has exactly six destinations...` |
+| `md:hidden` dropped from BottomNav (desktop footer returns) | `renders the six core tabs... and is hidden from md up` |
+| `md:flex` dropped from TopNav (desktop has no nav) | `is hidden below md and rendered as a Primary landmark...` |
+| disjointness broken (destination in both places) | `the two lists are disjoint...` |
+| dialog semantics or Escape/scroll-lock regress | the three `More` sheet tests |
+| `aria-current` dropped | both `marks the current destination` tests |
+
+Playwright had never actually run here (no `tests/e2e/` existed, browsers were not
+installed, `test-results/` was not gitignored). All three are fixed: mobile-chrome
+(Pixel 7) project added, `webServer` wired, artifacts gitignored.
+
+### Numbers
+
+| Check | Result |
+| --- | --- |
+| Vitest | 22 files, **374** tests, all passing (+13 this session) |
+| Playwright e2e | **6/6** (chromium + mobile-chrome) - first run ever |
+| lint / typecheck | clean |
+| build + `check:bundle` | OK, no secrets in the client bundle |
+| `check:migrations` / `check:grants` / `check:data-api` | OK (0/0/0 errors; no SQL touched) |
+| Database suites | unchanged this session (513/22 from the earlier run) |
+
+### What is left
+
+Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement report** -
+both are emails; the draft is ready. After CPX answers question 3: build the offer
+inventory loader (nothing seeds `app.offers`/`app.surveys`), then the
+`provider:cpx_research` reward source when its budget is approved. A visual pass of all
+pages at 320/375/768/1280 by a human is still worthwhile - tests prove behaviour and
+routing, not aesthetics.
+

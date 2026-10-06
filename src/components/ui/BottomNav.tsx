@@ -1,13 +1,28 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { cx } from './Card';
 
 // Bottom tab navigation, matching the mobile-first register of the references.
 //
+// RESPONSIVE SPLIT: this component is now MOBILE ONLY (`md:hidden` on the
+// nav itself).
+//   - < md: fixed bottom bar with the six CORE tabs plus a "More" sheet.
+//     Nine tabs in one row failed the 44px tap rule at 320-375px (~35px each);
+//     six tabs give ~53px each even at a 320px viewport.
+//   - >= md: hidden entirely. TopNav in the sticky header carries every
+//     destination, so navigation no longer means scrolling to the page bottom.
+//
+// The "More" sheet is a modal dialog: Escape closes it, the backdrop closes
+// it, focus is trapped while open and returns to the trigger on close, and
+// body scroll is locked. The slide-up animation is disabled by the global
+// prefers-reduced-motion rule in globals.css, so the sheet is equally usable
+// with animations off.
+//
 // Icons are inline SVG rather than an icon package: the set is tiny, and this
-// keeps the client bundle free of a dependency for six glyphs. Every icon is
+// keeps the client bundle free of a dependency for nine glyphs. Every icon is
 // aria-hidden because the label beside it already names the destination.
 
 export interface TabItem {
@@ -49,55 +64,150 @@ const ICONS: Record<TabItem['icon'], React.ReactNode> = {
 };
 
 /** A path is active for itself and for anything nested beneath it. */
-function isActive(pathname: string, href: string): boolean {
+export function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function BottomNav({ items }: { items: TabItem[] }) {
+/** The tab glyph. Shared by BottomNav and TopNav so the two navs cannot drift. */
+export function NavIcon({ icon, className }: { icon: TabItem['icon']; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cx('size-5', className)}
+      aria-hidden="true"
+    >
+      {ICONS[icon]}
+    </svg>
+  );
+}
+
+/**
+ * The count badge over an icon.
+ *
+ * The caller also renders an sr-only sentence: the visible badge alone would
+ * leave the count as a shape with no accessible value.
+ */
+export function NavBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <span className="absolute -right-2 -top-1 inline-flex min-w-4 items-center justify-center rounded-pill bg-brand-500 px-1 text-[0.5625rem] font-bold text-white">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+const TRIGGER_CLASS =
+  'flex min-h-14 flex-col items-center justify-center gap-0.5 px-2 py-1.5 text-[0.625rem] font-semibold transition-colors';
+
+const SHEET_LINK_CLASS =
+  'flex min-h-12 items-center gap-3 rounded-tile px-3 text-sm font-medium transition-colors';
+
+interface BottomNavProps {
+  /** The six always-visible tabs. */
+  core: TabItem[];
+  /** Tabs behind the "More" sheet. An empty array renders no trigger. */
+  secondary: TabItem[];
+}
+
+export function BottomNav({ core, secondary }: BottomNavProps) {
   const pathname = usePathname() ?? '';
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  // Close the sheet when the route changes - the case this catches is the
+  // browser Back button while the sheet is open. Adjusted during render
+  // (the React-documented "storing information from previous renders"
+  // pattern) rather than in an effect, which would be a cascading render.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
+    if (sheetOpen) setSheetOpen(false);
+  }
+
+  // Modal behaviour while open: Escape, focus trap, and scroll lock.
+  useEffect(() => {
+    if (!sheetOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSheetOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const focusable = sheetRef.current?.querySelectorAll<HTMLElement>('a[href], button');
+      if (!focusable || focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || active === sheetRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    sheetRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [sheetOpen]);
+
+  const closeSheet = (restoreFocus: boolean) => {
+    setSheetOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
+
+  const secondaryActive = secondary.some((item) => isActive(pathname, item.href));
+  const secondaryBadge = secondary.reduce((total, item) => total + (item.badge ?? 0), 0);
 
   return (
     <nav
       aria-label="Primary"
-      // Fixed on mobile, a row from md up. The register in the references is
-      // mobile-first, so the bar is the default rather than an afterthought
-      // squeezed beneath a desktop header.
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-surface/95 backdrop-blur md:static md:inset-auto md:border-0 md:bg-transparent"
+      // Fixed to the bottom on mobile only. From md up this element is hidden
+      // and TopNav in the header carries the same destinations, so there is
+      // never a moment with no visible navigation.
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-surface/95 backdrop-blur md:hidden"
     >
-      <ul className="mx-auto flex max-w-lg items-stretch justify-around md:max-w-3xl md:justify-start md:gap-1">
-        {items.map((item) => {
+      <ul className="mx-auto flex max-w-lg items-stretch justify-around">
+        {core.map((item) => {
           const active = isActive(pathname, item.href);
           const count = item.badge ?? 0;
 
           return (
-            <li key={item.href} className="flex-1 md:flex-none">
+            <li key={item.href} className="flex-1">
               <Link
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cx(
-                  'flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-pill px-2 py-1.5 text-[0.625rem] font-semibold transition-colors md:min-h-11 md:flex-row md:gap-2 md:px-3.5 md:text-sm',
+                  TRIGGER_CLASS,
+                  'w-full',
                   active ? 'bg-brand-100 text-brand-800' : 'text-ink-500 hover:bg-ink-100',
                 )}
               >
                 <span className="relative">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.75}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-5"
-                    aria-hidden="true"
-                  >
-                    {ICONS[item.icon]}
-                  </svg>
-
-                  {count > 0 ? (
-                    <span className="absolute -right-2 -top-1 inline-flex min-w-4 items-center justify-center rounded-pill bg-brand-500 px-1 text-[0.5625rem] font-bold text-white">
-                      {count > 99 ? '99+' : count}
-                    </span>
-                  ) : null}
+                  <NavIcon icon={item.icon} />
+                  <NavBadge count={count} />
                 </span>
 
                 {item.label}
@@ -109,7 +219,107 @@ export function BottomNav({ items }: { items: TabItem[] }) {
             </li>
           );
         })}
+
+        {secondary.length > 0 ? (
+          <li className="flex-1">
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-expanded={sheetOpen}
+              aria-haspopup="dialog"
+              onClick={() => setSheetOpen((open) => !open)}
+              className={cx(
+                TRIGGER_CLASS,
+                'w-full',
+                secondaryActive || sheetOpen
+                  ? 'bg-brand-100 text-brand-800'
+                  : 'text-ink-500 hover:bg-ink-100',
+              )}
+            >
+              <span className="relative">
+                {/* Three dots: the universal affordance for "there is more". */}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.75}
+                  strokeLinecap="round"
+                  className="size-5"
+                  aria-hidden="true"
+                >
+                  <path d="M5.5 12h.01M12 12h.01M18.5 12h.01" />
+                </svg>
+                <NavBadge count={secondaryBadge} />
+              </span>
+
+              More
+              {secondaryBadge > 0 ? (
+                <span className="sr-only">, {secondaryBadge} unread</span>
+              ) : null}
+            </button>
+          </li>
+        ) : null}
       </ul>
+
+      {sheetOpen ? (
+        // Backdrop: a click anywhere outside the sheet dismisses it. The sheet
+        // itself stops propagation so tapping a row is never a misclick-close.
+        <div className="fixed inset-0 z-50" role="presentation" onClick={() => closeSheet(false)}>
+          <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-[2px]" />
+
+          <div
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="More destinations"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            className="nav-sheet absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-ink-200 bg-surface p-3 pb-6 shadow-raised focus:outline-none"
+          >
+            {/* Drag-handle, decorative: the sheet is dismissed by backdrop,
+                Escape or a row - never by a swipe-only gesture. */}
+            <div className="mx-auto mb-3 h-1 w-10 rounded-pill bg-ink-200" aria-hidden="true" />
+
+            <ul className="space-y-1">
+              {secondary.map((item) => {
+                const active = isActive(pathname, item.href);
+                const count = item.badge ?? 0;
+
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => closeSheet(false)}
+                      className={cx(
+                        SHEET_LINK_CLASS,
+                        active ? 'bg-brand-100 text-brand-800' : 'text-ink-700 hover:bg-ink-100',
+                      )}
+                    >
+                      <span className="relative">
+                        <NavIcon icon={item.icon} />
+                        <NavBadge count={count} />
+                      </span>
+
+                      {item.label}
+
+                      {count > 0 ? <span className="sr-only">, {count} unread</span> : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <button
+              type="button"
+              onClick={() => closeSheet(true)}
+              className="mt-3 min-h-11 w-full rounded-pill bg-ink-100 text-sm font-semibold text-ink-700 transition-colors hover:bg-ink-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }

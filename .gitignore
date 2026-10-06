@@ -39,3 +39,7 @@ tmp_*
 # --- supabase local ---
 supabase/.temp/
 supabase/.branches/
+
+# Playwright artifacts (npm run e2e)
+test-results/
+playwright-report/

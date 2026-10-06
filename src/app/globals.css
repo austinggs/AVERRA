@@ -97,3 +97,27 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Navigation
+   --------------------------------------------------------------------------- */
+
+/* The mobile "More" sheet slides up from the bottom edge - the standard
+   bottom-sheet affordance. Duration is deliberately short; the
+   prefers-reduced-motion block above reduces it to an instant appearance, so
+   the sheet never depends on its animation to become usable. */
+@keyframes nav-sheet-up {
+  from {
+    transform: translateY(1.5rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.nav-sheet {
+  animation: nav-sheet-up 180ms ease-out;
+}

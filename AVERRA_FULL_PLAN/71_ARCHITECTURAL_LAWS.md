@@ -1,9 +1,27 @@
 AVERRA — ARCHITECTURAL LAWS
 
 Document: 71_ARCHITECTURAL_LAWS.md
-Version: 1.2
+Version: 1.3
 Status: Approved planning baseline
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-07
+
+AMENDMENT CR-0035 (2026-10-07) - NEW LAW 8
+- 88_ECONOMIC_SIMULATION.md and 89_NUMERIC_AND_MONEY_REPRESENTATION.md are added
+  as the authoritative requirement for economic simulation.
+- Documents 15-34 (Mining Game) are SUPERSEDED and retained verbatim as history.
+- Mining is DORMANT and MUST NOT be deleted before CR-0045.
+
+LAW 8 - THE THREE ECONOMIC LAYERS NEVER MERGE
+  The virtual game economy, provisional real-money earnings, and governed
+  real-money rewards are three separate domains. They MUST NOT be combined,
+  summed, netted, or displayed as one figure. Governed real money MUST NOT be
+  derived from virtual profit, virtual net worth, virtual asset appreciation, or
+  the amount a user paid. There is no conversion rate between virtual wealth and
+  real money. Violating this is a financial defect even when every number is
+  individually correct.
+
+This CR changed documentation only. No code, schema, migration, test,
+configuration, feature flag, UI or API was changed.
 
 PURPOSE
 Consolidated non-negotiable system rules.

@@ -1,7 +1,7 @@
 # Averra - Discrepancy Log
 
 Document: docs/DISCREPANCIES.md
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-07
 Purpose: record where the source-of-truth corpus disagreed, what was decided, and what
 was retracted. Per doc 78, a discrepancy is never resolved silently.
 
@@ -2137,3 +2137,148 @@ route returned an object with no such key and the page silently showed nothing. 
 did not catch it because the function's declared return type was satisfied by the fields
 it _did_ set. Adding a field to a read model means adding it to the wire type in the same
 commit; the unit test that asserts the serialised key set is what found it.
+
+## Q-48 - the economic simulation specification was never part of the approved baseline
+
+A directory `averrra_economic_sim_spec/` (27 files, `00`–`22` plus a brief, a manifest
+and a README) describes a full virtual-economic life simulator replacing the Mining
+Game. It was never numbered, never versioned, never indexed, and never referenced by
+`82_SOURCE_INDEX.md`. Per doc 78 a specification that sits outside the numbered corpus
+is not a source of truth, however detailed it is.
+
+**Decision.** It is classified INPUT, not baseline. It is not adopted wholesale. `88`
+and `89` are now the authoritative economic-simulation requirement, and the external
+package is subordinate to them. Its conflicts are recorded here rather than resolved by
+editing the external files, which are left intact as the source that was reviewed.
+
+## Q-49 - a floating-point price model contradicts an integer money model
+
+`02_GAME_ECONOMY.md` and `12_SECURITY_ANTI_FRAUD.md` of the external spec both require
+integer minor units and say "Never use floating point for balances or accounting",
+while `03_MARKETS_AND_PRICE_ENGINE.md` defines a multiplicative price recurrence,
+`new_price = max(min_price, previous_price * (1 + clamp(r, ...)))`, plus exponential
+decay `impact_t = impact_0 * e^(-t/half_life)`. Neither statement can be satisfied by
+one storage type: a price that changes by a fraction of a minor unit has no integer
+representation, and a balance must not absorb that rounding.
+
+**Decision.** `89` splits the two explicitly rather than picking a winner. Monetary and
+accounting amounts are `BIGINT` in minor units. Prices, returns, factors, ratios and
+decay coefficients are `NUMERIC(38,12)`. Arithmetic is numeric end to end with no
+intermediate rounding and exactly one final rounding step. Adopting either rule alone
+would have silently violated the other.
+
+## Q-50 - the market engine assumes a scheduler this repository does not have
+
+`03_MARKETS_AND_PRICE_ENGINE.md` specifies a 60-second tick, clients updated "through
+realtime/polling", and "scheduled aggregation jobs". `02_GAME_ECONOMY.md` requires
+daily telemetry aggregates. The repository has no cron entry, no `pg_cron` schedule,
+no background worker and no queue consumer; the only scheduled surface is the
+outbox, which exists to deliver already-committed financial events and is not a
+price engine.
+
+**Decision.** V1 is deterministic and lazy-on-read. A price is computed when read, from
+(a canonical epoch, tick index, asset, seed), with a fixed stored epoch rather than
+wall-clock "now". No scheduler is introduced. The consequence is deliberate: two
+servers at the same tick MUST produce the identical price, which is testable, where a
+job that may or may not have fired is not.
+
+## Q-51 - the navigation list exceeds the navigation budget actually shipped
+
+`15_UI_UX_AND_NAVIGATION.md` lists eight destinations (Home, Markets, Trade, Wallets,
+News, Life, Store, More) and says to "replace the current mining entry" with them. The
+shipped application has a header `TopNav`, a six-item mobile tab bar and a `More`
+sheet. Eight primary tabs do not fit that budget, and the design system sets a 44px
+minimum tap target.
+
+**Decision.** Not resolved by choosing six destinations. The external spec itself
+defers: it says to reuse "the existing responsive navigation pattern from AVERRA's
+newer navigation work where possible". The game destinations therefore become
+game-contextual navigation inside the game shell, not eight global tabs. Recorded in
+`88` rather than in `15`, since `15` is superseded and must not be edited further.
+
+## Q-52 - the database schema contract contained no game domain to deprecate
+
+`48_DATABASE_SCHEMA.txt` was searched for `game_` and contains zero matches, even
+though the Mining Game has been in production for months with `app.game_players`,
+`app.game_achievements`, `app.game_events` and `app.game_leaderboard_entries`. The
+contract that defines the production schema never described the largest game domain
+in it.
+
+**Decision.** Recorded rather than back-filled. Writing the current mining schema into
+`48` would give a superseded subsystem authoritative documentation status, and CR-0035
+creates no schema. `48` is amended to state that no simulation table exists yet and
+that the domain is deferred to CR-0037 and later.
+
+## Q-53 - the specification proposes a second store beside an existing one
+
+`13_DATABASE_AND_BACKEND.md` defines `app.store_orders`, `app.store_order_items`,
+`app.manual_payment_submissions` and `app.store_fulfillments`, and
+`10_MONETIZATION_AND_MANUAL_PAYMENTS.md` defines an order lifecycle. AVERRA already has
+this domain: `app.paid_perk_products`, `app.paid_perk_orders`,
+`app.paid_perk_fulfillments` and the manual-payment-submission table from CR-0017,
+together with the funding-spend polarity rule that a funding SPEND is a
+`USER_FUNDING_SPEND` DEBIT and never an earned reward.
+
+**Decision.** CR-0042 generalizes the existing machinery. There is no second store, no
+second order table and no second payment-order architecture. Adopting the external
+names verbatim would have produced two order tables with different state vocabularies
+and one ledger, which is the same shape as Q-55 one level up.
+
+## Q-54 - the specification names a table that already exists in the live schema
+
+`13_DATABASE_AND_BACKEND.md` proposes creating `app.game_achievements`. That table was
+created by `20260930000021_game_expansion.sql` at line 79 and is live. The same file
+proposes `app.game_accounts`, which does not exist (mining uses `app.game_players`),
+so the collision is not detectable by pattern alone.
+
+**Decision.** Recorded in `88` section 9 as a hard collision to resolve before any
+implementation migration. Adopting the spec as written would have produced a migration
+that fails against the deployed database, at a point where a partial series would
+already exist.
+
+## Q-55 - the specification defines an order state the live enum does not contain
+
+`10_MONETIZATION_AND_MANUAL_PAYMENTS.md` lists `PAID` among the order states. The live
+enum `app.paid_order_status` (migration `20260930000040`, lines 46-52) is `PENDING`,
+`CONFIRMED`, `FULFILLED`, `REFUNDED`, `CANCELLED`. There is no `PAID`, and there is no
+`REJECTED` either.
+
+**Decision.** The existing enum wins; CR-0042 maps onto it and does not define a second
+vocabulary. This is the exact defect class of CR-0029 (Q-41), where comparing a
+presentation string against an enum that does not contain it rendered paid money as
+unpaid. The failure is silent, so it is recorded here as a named collision rather than
+left to be rediscovered during implementation.
+
+## Q-56 - a virtual mint is named after a real-money operation
+
+`13_DATABASE_AND_BACKEND.md` lists a server function `deposit_virtual_cash` described
+as "system only". In this repository "deposit" is a loaded real-money term: deposits
+post to User Funding Balance only after independent payment verification and authorized
+admin confirmation.
+
+**Decision.** A virtual mint MUST NOT be named `deposit`. Recorded in `88` section 9 so
+the rename happens before the function is written rather than after it is reviewed.
+
+## Q-57 - price columns are named as minor units but required to be fractional
+
+`13_DATABASE_AND_BACKEND.md` names price columns `open_minor`, `high_minor`,
+`low_minor`, `close_minor`, `limit_price_minor` and `price_minor`, while the same
+document requires minor-unit integer money and the price engine requires fractional
+prices. Across the applied migrations `_minor` is unambiguously `BIGINT`
+(`paid_perk_products.price_minor`, `paid_perk_orders.price_minor`, migrations 040 and
+043), so a `NUMERIC(38,12)` column carrying that suffix would contradict an existing
+convention.
+
+**Decision.** The REQUIRED TYPE wins and the COLUMN NAME gives. `_minor` is reserved
+exclusively for `BIGINT` minor-unit amounts; price and rate columns use `_price`,
+`_price_num`, `_rate`, `_factor` or the domain term. Recorded in `89` section 4. The
+alternative — making all prices `BIGINT` minor units — was rejected because it cannot
+represent the external spec's own one-kobo coin price with any meaningful precision.
+
+## Note on the starting balance
+
+`00_MASTER_SPEC.md` states a starting balance of "1,000,000 virtual NGN" and defines the
+minor unit as 100 virtual kobo per NGN, but never states the encoded integer. The two
+readings differ by 100x. `89` section 7 fixes it at 100,000,000 (virtual kobo). Not
+raised as a numbered question because there is no conflict between sources, only an
+omission in one of them.

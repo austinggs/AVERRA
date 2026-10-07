@@ -1,9 +1,19 @@
+================================================================================
+SUPERSEDED 2026-10-07 (CR-0035) - RETAINED FOR HISTORICAL REFERENCE ONLY
+The Mining Game this document describes is being retired.
+This document MUST NOT be used as an implementation requirement.
+The authoritative current requirement is 88_ECONOMIC_SIMULATION.md
+and 89_NUMERIC_AND_MONEY_REPRESENTATION.md.
+Everything below this banner is PRESERVED VERBATIM and is unchanged history.
+Retirement stage: DORMANT. Mining is still in production and still holds
+player data. No change record may delete or rewrite it before CR-0045.
+================================================================================
 AVERRA — AVERRA — MINING GAME GAMEPLAY
 
 Document: 16_MINING_GAME_GAMEPLAY.txt
-Version: 1.0
-Status: Approved planning baseline
-Last reviewed: 2026-09-29
+Version: 1.1
+Status: SUPERSEDED 2026-10-07 by CR-0035 - retained as history, not an implementation requirement
+Last reviewed: 2026-10-07
 
 PURPOSE
 Defines moment-to-moment mechanics and progression.

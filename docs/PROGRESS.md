@@ -1278,3 +1278,70 @@ Migration 064 was applied to the hosted database and the suite re-verified there
 **Still open, unchanged:** the CPX go-live checklist (email sent; waiting on CPX's
 written answer for `status=1`), the offer/survey inventory loader so the Earn tab can
 light up, and a human visual pass at 320/375/768/1280.
+
+## CR-0035 - Economic simulation baseline (documentation only)
+
+### What this change is
+
+A documentation-only baseline amendment. It adds two authoritative documents,
+`88_ECONOMIC_SIMULATION.md` and `89_NUMERIC_AND_MONEY_REPRESENTATION.md`, classifies
+the twenty Mining Game documents (15-34) as SUPERSEDED while retaining them verbatim,
+and records the economic-simulation and mining-retirement roadmap.
+
+It changes no code, no migration, no schema, no test, no configuration, no feature
+flag, no UI, no API route, and no mining data.
+
+### Mining classification
+
+Documents 15-34 are SUPERSEDED and retained verbatim as history. The Mining Game itself
+is classified DORMANT: it remains in the codebase, remains reachable in production,
+holds player data, and is referenced by the real ledger. Nothing was removed, renamed,
+archived or rewritten.
+
+Retirement proceeds in four ordered stages - dormant, dependencies re-pointed,
+production absence verified, final retirement - and CR-0045 is the only destructive
+change record. The mining-data audit (CR-0036) remains a hard prerequisite to Stage 4.
+
+### The three economic layers
+
+1. Virtual game economy - no real-world value, never withdrawable.
+2. Provisional real-money earnings - a read-only projection, not withdrawable, not
+   spendable, no table and no ledger entry (the CR-0034b / migration 064 shape).
+3. Governed real-money rewards - the only domain in which real money moves.
+
+They are never combined, summed, netted or displayed as one figure, and layer 3 is
+never derived from layer 1 profit, virtual net worth or what a user paid.
+
+### Conflicts found and recorded
+
+Ten entries were appended to `docs/DISCREPANCIES.md` (Q-48 through Q-57, plus a note on
+the starting-balance encoding). The four that would have caused an implementation
+failure rather than a wording disagreement:
+
+- the specification proposes `app.game_achievements`, which already exists in the live
+  schema from migration 021 (Q-54);
+- it defines an order state `PAID`, which the live enum `app.paid_order_status` does
+  not contain (Q-55);
+- it names a virtual mint `deposit_virtual_cash`, a loaded real-money term (Q-56);
+- it names fractional price columns `*_minor`, a suffix reserved for BIGINT (Q-57).
+
+### One decision taken without a ruling
+
+The `_minor` / `NUMERIC(38,12)` conflict (Q-57) was resolved in favour of the required
+TYPE, with the column NAME giving: `_minor` stays reserved for BIGINT minor units and
+price columns are renamed. This was flagged for confirmation before implementation and
+was not separately ruled on, so it is restated here as an open assumption to confirm at
+CR-0037.
+
+### Validation actually performed
+
+- All 20 SUPERSEDED banners confirmed present (20/20), with UTF-8 intact.
+- Version bumps applied to 10 documents and listed in the change record.
+- No non-documentation file was created, modified or deleted; verified with `git status`
+  and `git diff --stat`.
+- No migration was applied, edited or added; verified against `supabase/migrations`.
+- **No documentation linter exists in this repository.** `npm run` exposes
+  `dev, build, lint, typecheck, test, e2e, check:bundle, check:migrations,
+  check:data-api, check:grants` and nothing that validates prose. The gates that do
+  exist are code gates, and they were run to prove no code changed, not to validate the
+  documents. Reference and consistency checking was manual.

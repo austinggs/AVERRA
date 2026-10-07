@@ -214,6 +214,12 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
 - CR-0021 - Review authoring commands and the reply outbox (doc 86). Migration 042.
 - CR-0032 - Append-only provider reversals. Migrations 057/058.
 - CR-0033 - Settlement-gated attribution. Migrations 059-063.
+- CR-0034 - Responsive navigation. CR-0034b adds provisional provider earnings,
+  migration 064: a read-only projection of estimated earnings from non-LIVE
+  providers. No table, no ledger entry, no reward, no payout.
+- CR-0035 - Economic simulation baseline. Documentation only: docs 88 and 89 added,
+  docs 15-34 superseded and retained verbatim. Mining is DORMANT, not removed; only
+  CR-0045 may retire it, and only after CR-0036 audits its data.
 
 ## A provider withdrawal is a new row, not an UPDATE
 

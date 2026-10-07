@@ -1,9 +1,22 @@
 AVERRA — AVERRA — GAMIFICATION
 
 Document: 47_GAMIFICATION.txt
-Version: 1.0
+Version: 1.1
 Status: Approved planning baseline
-Last reviewed: 2026-09-29
+Last reviewed: 2026-10-07
+
+AMENDMENT CR-0035 (2026-10-07)
+- 88_ECONOMIC_SIMULATION.md and 89_NUMERIC_AND_MONEY_REPRESENTATION.md are added
+  as the authoritative requirement for economic simulation.
+- Documents 15-34 (Mining Game) are SUPERSEDED and retained verbatim as history.
+  They MUST NOT be used as an implementation requirement.
+- Mining is DORMANT: still in production, still holding player data. Nothing may
+  delete, archive or rewrite mining data before CR-0045.
+- XP, levels, streaks and badges remain in --color-gamify-* and MUST NOT be styled
+  as, or displayed alongside, a financial amount. A virtual reward MUST never be
+  mistakable for money.
+- This CR changed documentation only. No code, schema, migration, test,
+  configuration, feature flag, UI or API was changed.
 
 PURPOSE
 Defines XP, levels, streaks, badges, challenges, and other non-financial progression systems.

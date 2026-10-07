@@ -1,9 +1,28 @@
 AVERRA — DATABASE SCHEMA
 
 Document: 48_DATABASE_SCHEMA.txt
-Version: 1.3
+Version: 1.4
 Status: Approved planning baseline
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-07
+
+AMENDMENT CR-0035 (2026-10-07)
+- 88_ECONOMIC_SIMULATION.md and 89_NUMERIC_AND_MONEY_REPRESENTATION.md are added
+  as the authoritative requirement for economic simulation.
+- Documents 15-34 (Mining Game) are SUPERSEDED and retained verbatim as history.
+- Mining is DORMANT: still in production, still holding player data. Nothing may
+  drop, archive or rewrite mining data before CR-0045.
+- NO TABLE WAS CREATED OR ALTERED BY THIS CR. No game-simulation table exists yet.
+  Schema for the new domain is deferred to CR-0037 and later.
+- Column typing for the future domain is fixed by 89: monetary and accounting
+  amounts are BIGINT in minor units; prices, returns and factors are
+  NUMERIC(38,12). The `_minor` suffix is reserved exclusively for BIGINT, so a
+  price column MUST NOT be named `*_minor`.
+- KNOWN COLLISION: app.game_achievements already exists (migration
+  20260930000021). Any new achievements table MUST use a different name.
+- There MUST NOT be a second store or a second payment-order table. The game store
+  generalizes the existing paid-perk order machinery (CR-0017) at CR-0042.
+- This CR changed documentation only. No code, schema, migration, test,
+  configuration, feature flag, UI or API was changed.
 
 PURPOSE
 Logical production database domain model, including user funding deposits and MiniPay manual crypto verification.

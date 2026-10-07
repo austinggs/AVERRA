@@ -1,15 +1,32 @@
 AVERRA — SOURCE INDEX
 
 Document: 82_SOURCE_INDEX.md
-Version: 1.3
+Version: 1.4
 Status: Approved planning baseline
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-07
+
+AMENDMENT CR-0035 (2026-10-07)
+- Documents 88 and 89 are ADDED. The corpus is now 90 documents (00-89).
+- Documents 15-34 (Mining Game) are SUPERSEDED and retained verbatim as history.
+  They MUST NOT be used as an implementation requirement.
+- Mining is DORMANT: still in production, still holding player data. Nothing may
+  drop, archive or rewrite mining data before CR-0045.
+- The external package averrra_economic_sim_spec/ is INPUT, not baseline. Where it
+  conflicts with 88 or 89, 88/89 win. Conflicts are recorded in
+  docs/DISCREPANCIES.md (Q-48 onward).
+- This CR changed documentation only. No code, schema, migration, test,
+  configuration, feature flag, UI or API was changed.
 
 PURPOSE
-Master index of the 88-document specification (documents 00-87) and authority hierarchy.
+Master index of the 90-document specification (documents 00-89) and authority hierarchy.
 
 FILE MAP
-00–14 Product/User/Earning foundations; 15–34 Mining Game; 35–47 Reward/Wallet/Payment/Growth; 48–64 Data/Architecture/Security/Operations; 65–82 Testing/Governance/Maps; 83 Monetization/Paid Perks; 84 User Funding & Deposit System; 85 Support & Contact Policy; 86 Reviews & Community System; 87 Admin Portal Expanded.
+00–14 Product/User/Earning foundations; 15–34 Mining Game (SUPERSEDED 2026-10-07 by CR-0035, retained verbatim as history, dormant in production); 35–47 Reward/Wallet/Payment/Growth; 48–64 Data/Architecture/Security/Operations; 65–82 Testing/Governance/Maps; 83 Monetization/Paid Perks; 84 User Funding & Deposit System; 85 Support & Contact Policy; 86 Reviews & Community System; 87 Admin Portal Expanded; 88 Economic Simulation; 89 Numeric and Money Representation.
+
+ECONOMIC SIMULATION REFERENCE
+- `88_ECONOMIC_SIMULATION.md`: authoritative economic-simulation roadmap, the three-layer economic separation, the deterministic lazy-on-read market design, and the mining retirement path.
+- `89_NUMERIC_AND_MONEY_REPRESENTATION.md`: authoritative typing rules — BIGINT minor units for money and accounting, NUMERIC(38,12) for prices, returns and factors, one final rounding step, and the `_minor` naming rule.
+- Mining retirement sequence: dormant -> dependencies re-pointed -> production absence verified -> final retirement. CR-0045 is the only destructive change record.
 
 PRIMARY PROVIDER REFERENCES
 - MiniPay homepage: https://minipay.to/

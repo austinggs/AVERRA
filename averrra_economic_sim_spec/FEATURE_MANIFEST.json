@@ -1,0 +1,42 @@
+{
+  "product": "AVERRA Economic Simulation",
+  "replacement_target": "current mining simulator",
+  "version": "v1",
+  "virtual_money": {
+    "code": "VNGN",
+    "starting_cash_ngn": 1000000,
+    "cash_is_withdrawable": false
+  },
+  "stocks": 24,
+  "fictional_crypto": ["AVR", "NOVA", "LUX", "PULSE", "KITE", "VOLT"],
+  "real_crypto_enabled": false,
+  "real_blockchain_enabled": false,
+  "manual_payments": true,
+  "employment_activation": {
+    "default_price_ngn": 100,
+    "duration_days": 30
+  },
+  "promotional_reward": {
+    "default_monthly_cap_ngn": 200,
+    "converted_from_virtual_profit": false,
+    "guaranteed": false
+  },
+  "server_authoritative_finance": true,
+  "idempotency_required": true,
+  "core_modules": [
+    "life",
+    "economy",
+    "markets",
+    "stocks",
+    "fictional_crypto",
+    "wallets",
+    "trading",
+    "custom_trades",
+    "marketplace",
+    "news_events",
+    "seasons",
+    "store",
+    "manual_payments",
+    "provisional_real_rewards"
+  ]
+}

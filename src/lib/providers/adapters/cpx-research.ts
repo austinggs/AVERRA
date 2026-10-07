@@ -19,12 +19,23 @@
 // placeholder CPX publishes: status, type, trans_id, user_id, subid_1, subid_2,
 // amount_local, amount_usd, offer_id, ip_click, hash.
 //
-// THE SECRET IS READ LAZILY, INSIDE verifyCallback.
+// TWO DIFFERENT HASHES OVER THE SAME SECRET
+//
+// CPX documents md5 hashes on BOTH directions and they are easy to conflate:
+//
+//   inbound  postback   md5(trans_id     + '-' + secret)   they send, we verify
+//   outbound entry link md5(ext_user_id  + '-' + secret)   we send, CPX checks
+//
+// Only the inbound formula appears verbatim on the vendor's Postback Settings panel.
+// The outbound one is quoted from https://cpx-research.com/main/en/doc.php. They are
+// separate functions (`verifyCallback` / `cpxEntrySecureHash`) for that reason.
+//
+// THE SECRETS ARE READ LAZILY, INSIDE THE FUNCTIONS THAT USE THEM.
 //
 // `registry.ts` registers adapters at module load, and that runs during `next build`.
 // A build-time read of a required variable fails the Vercel build with an error about
 // a missing environment variable, which is a confusing way to learn a name is wrong.
-// Reading it here means an unset value surfaces as `UNSUPPORTED` with a reason - the
+// Reading them here means an unset value surfaces as `UNSUPPORTED` with a reason - the
 // correct fail-closed outcome - and the build never depends on it.
 
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -58,6 +69,45 @@ const FIELD = {
   clickIp: 'ip_click',
   hash: 'hash',
 } as const;
+
+/**
+ * THE OUTBOUND ENTRY URL, PER CPX'S CURRENT DOCUMENTATION.
+ *
+ * From https://cpx-research.com/main/en/doc.php, IFRAME TAG documentation:
+ *
+ *     https://offers.cpx-research.com/index.php?app_id={app_id}
+ *       &ext_user_id={unique_user_id}&secure_hash={secure_hash}
+ *       &username={user_name}&email={user_email}&subid_1=&subid_2=
+ *
+ * and, for the secure hash:
+ *
+ *     "For higher security, you can add the secure hash parameter. You can generate
+ *      it with your secure hash and the ext_user_id information
+ *      (e.g. for php md5({unique_user_id}-{app_secure_hash}))"
+ *
+ * THIS IS A DIFFERENT HASH FROM THE INBOUND POSTBACK HASH, over a DIFFERENT input,
+ * using the SAME shared secret. Conflating the two is the single most likely way to
+ * "implement CPX" and have nothing work:
+ *
+ *   outbound (this function)  md5(ext_user_id + '-' + secret)   -> we SEND it
+ *   inbound  (verifyCallback) md5(trans_id     + '-' + secret)   -> they SEND it
+ *
+ * Both were checked against the vendor's own screen; only the inbound one is quoted
+ * on the Postback Settings panel, so the two are named separately here rather than
+ * sharing one helper.
+ *
+ * `app_id` IS MANDATORY AND WAS MISSING. The previous implementation set `subid_1`
+ * on the base URL and nothing else. CPX uses `app_id` to know WHICH APP the click
+ * belongs to, so with it absent every click is unattributable to us no matter how
+ * good the tracking id is. `ext_user_id` is likewise mandatory, must be unique per
+ * user, and CPX documents it as the field "used for postback/s2s/webhook
+ * communication".
+ */
+
+/** Builds the documented `secure_hash` for an entry link. */
+export function cpxEntrySecureHash(extUserId: string, secret: string): string {
+  return createHash('md5').update(`${extUserId}-${secret}`, 'utf8').digest('hex');
+}
 
 /**
  * CPX's published "Postback Whitelist IP" addresses.
@@ -234,28 +284,52 @@ export function createCpxAdapter(): ProviderAdapter {
     },
 
     /**
-     * Builds the click-through URL for a survey.
+     * Builds the click-through URL for a survey, per CPX's CURRENT documentation.
      *
-     * THE ONE JOB HERE IS CARRYING `subid_1`.
+     * WHAT WAS MISSING, AND WHY IT MADE CPX UNUSABLE
      *
-     * `subid_1` is the field CPX echoes back on the postback, and `handleCallback` reads
-     * it as `trackingId`. Empty `subid_1` is precisely why every conversion so far has
-     * landed with `UNRESOLVED_TRACKING_ID` - the provider had no way to tell us which
-     * click it was reporting.
+     * The previous version set `subid_1` and nothing else. CPX's documented entry URL
+     * requires `app_id` and `ext_user_id` on EVERY integration method - iframe, script
+     * tag and API - and CPX states `ext_user_id` "will also be used for
+     * postback/s2s/webhook communication". Without `app_id` CPX cannot tell which app a
+     * click belongs to, so nothing we send is attributable to us however good our
+     * tracking id is. The link was well-formed and useless.
      *
-     * SO WHY IS THE CLICK NOT AUTHENTICATED BY IT?
+     * THE THREE IDENTITIES, AND WHY THEY ARE DIFFERENT VALUES
      *
-     * CPX signs `md5(trans_id - secure_hash)`. `subid_1` is not in that input, so a
-     * signature proves a callback came from CPX; it does not prove the `subid_1` inside
-     * it is the one we sent. This raises the cost of a forgery - the tracking id is 128
-     * CSPRNG bits, minted server-side, never chosen by a client - and the settlement gate
-     * (migration 059) is what actually stops money leaving. Do not describe this link as
-     * making attribution authenticated. It does not.
+     *   ext_user_id  OUR user id. Mandatory, unique per user, and STABLE across
+     *               sessions per CPX's own wording. CPX builds a respondent profile
+     *               from it, so it must not change per click - a per-participation id
+     *               here would give every user a fresh profile on every survey.
+     *   subid_1      the per-click `tracking_id` minted by
+     *               `begin_provider_participation`. This is what OUR ingest resolves
+     *               the paying user from, through our own participation table.
+     *   subid_2      free-form passthrough, unused by us today.
      *
-     * The base URL comes from `offers.tracking_base_url` via
-     * `public.get_offer_tracking_target`, which only returns rows for an ACTIVE offer of
-     * a LIVE provider. So an unconfigured or non-live offer yields no URL at all rather
-     * than a link to nowhere.
+     * `ext_user_id` is passed by the ROUTE from the VERIFIED SESSION, never from a
+     * request body, so a client cannot mint a link that attributes someone else's
+     * click. It is not a client-chosen value in any sense.
+     *
+     * THE SIGNATURE DOES NOT AUTHENTICATE EITHER FIELD
+     *
+     * CPX signs `md5(trans_id - secure_hash)` on the postback. Neither `ext_user_id`
+     * nor `subid_1` is inside that input. A valid signature proves the callback came
+     * from CPX; it does NOT prove the attribution fields inside it are the ones we
+     * sent. The outbound `secure_hash` (md5 of ext_user_id + secret) binds the ENTRY
+     * link to us for CPX's benefit, but CPX does not echo it back, so it is not a
+     * verification mechanism on this side either.
+     *
+     * So attribution rests on: the tracking id being 128 CSPRNG bits minted
+     * server-side and never chosen by a client, plus the settlement gate (migration
+     * 059) which stops money leaving unless a report matches exactly. Do not describe
+     * this as authenticated attribution. It is not.
+     *
+     * REFUSING TO BUILD A LINK WITH NO `app_id`
+     *
+     * Failing closed here is deliberate. A link missing the mandatory app id would send
+     * a real user to CPX and produce an unattributable conversion - the silent failure
+     * this whole path exists to prevent. An error the operator can see is strictly
+     * better than traffic that looks like it worked.
      */
     createTrackingLink: async (input: TrackingLinkInput): Promise<TrackingLink> => {
       if (!input.baseUrl) {
@@ -264,11 +338,39 @@ export function createCpxAdapter(): ProviderAdapter {
         );
       }
 
+      // CPX requires app_id on every documented entry method. Read lazily, for the same
+      // reason `secureHash()` is: `registry.ts` runs at module load during `next build`,
+      // and a build-time throw about a missing env var is a confusing way to learn a
+      // name is wrong.
+      const appId = process.env.CPX_APP_ID?.trim();
+
+      if (!appId) {
+        throw new Error('cpx: CPX_APP_ID is not set, so no attributable link can be built');
+      }
+
+      // `ext_user_id` is mandatory AND must identify a real Averra user. A link without
+      // it cannot be tied to an account, so it would be a conversion nobody could claim.
+      if (!input.userId) {
+        throw new Error('cpx: a verified user id is required to build an entry link');
+      }
+
       const base = new URL(input.baseUrl);
 
-      // `subid_1` is CPX's documented name for it. Preserving any query the base URL
-      // already carries is why this goes through URL rather than string concatenation -
-      // concatenating onto a URL that already has a `?` produces a broken second query.
+      // Preserving any query the base URL already carries is why this goes through URL
+      // rather than string concatenation - concatenating onto a URL that already has a
+      // `?` produces a broken second query.
+      base.searchParams.set('app_id', appId);
+      base.searchParams.set('ext_user_id', input.userId);
+
+      // The documented outbound hash. Same secret as the inbound postback hash, different
+      // input, so it is computed here rather than reused from verifyCallback.
+      const secret = secureHash();
+
+      if (secret) {
+        base.searchParams.set('secure_hash', cpxEntrySecureHash(input.userId, secret));
+      }
+
+      // The per-click tracking id, which OUR ingest resolves the paying user from.
       base.searchParams.set('subid_1', input.trackingId);
 
       return {

@@ -24,12 +24,24 @@
 // The factor is applied by CPX in their own system; we only re-express their decimal
 // string in minor units, digit by digit.
 
+import { createHash } from 'node:crypto';
 import type { ConversionStatus } from '@/lib/providers/types';
 
 /** CPX sends NGN and USD; NGN has been observed with trailing zeros, see below. */
 export const CPX_SCALE = 2;
 
-/** Unit the reward is recorded in. Matches `reward_sources.currency_unit` elsewhere. */
+/**
+ * Unit the reward is recorded in. Matches `reward_sources.currency_unit` elsewhere.
+ *
+ * WHY THIS IS NOT A CONFIGURABLE CURRENCY. CPX's own documentation defines the
+ * user's payout as "in your local currency (based on your currency settings in the
+ * publisher profile)" - so the unit is a property of OUR publisher profile, not a
+ * per-callback field, and `amount_local` is meaningless without it. Letting it be
+ * configurable per deployment would mean a conversion could be booked in a unit the
+ * funding source does not hold, and `grant_reward` refuses on exactly that mismatch.
+ * One constant, one meaning, asserted against `reward_sources.currency_unit` by
+ * `supabase/tests/cpx_live.sql`.
+ */
 export const CPX_LOCAL_UNIT = 'NGN-kobo';
 
 export type DecimalResult = { ok: true; value: bigint } | { ok: false; reason: string };

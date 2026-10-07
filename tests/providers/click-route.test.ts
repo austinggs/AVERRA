@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // POST /api/providers/offers/[id]/click
 //
-// The route that hands a user a click-through URL carrying `subid_1`. Empty `subid_1`
-// is why every live CPX conversion so far landed as `UNRESOLVED_TRACKING_ID`, so this
-// route is what makes attribution possible at all.
+// The route that hands a user a click-through URL. Since CR-0036 that link is the
+// documented CPX entry URL, carrying `app_id`, `ext_user_id`, the outbound
+// `secure_hash` and `subid_1` - not `subid_1` alone, which was the defect.
 //
 // WHAT IS ACTUALLY WORTH TESTING HERE
 //
@@ -13,10 +13,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 //
 //   1. an unauthenticated caller is refused (fail closed);
 //   2. a user id is never read from the request body - only from the session;
-//   3. an offer whose provider is not LIVE yields 404, so the route is inert while
-//      cpx_research is CANDIDATE;
+//   3. an offer whose provider is not LIVE yields 404;
 //   4. the tracking id in the returned URL is the one the DATABASE minted, not anything
-//      the client supplied.
+//      the client supplied;
+//   5. `ext_user_id` in the link is the SESSION user, so a caller cannot mint a link
+//      that attributes a click to somebody else.
 //
 // `server-only` is mocked because the shared `route()` helper imports it and a test is
 // not the server. That is the only reason; the route's real database calls are mocked
@@ -39,6 +40,8 @@ const route = await import('@/app/api/providers/offers/[id]/click/route');
 
 const USER_ID = '44444444-4444-4444-4444-444444444444';
 const MINTED_TRACKING_ID = 'av_0123456789abcdef0123456789abcdef';
+const CPX_APP_ID = '16548';
+const CPX_SECRET = 'test-secret-not-the-real-one';
 
 function context(id = 'offer-1') {
   return { params: Promise.resolve({ id }) };
@@ -56,7 +59,7 @@ function request(body?: unknown): Request {
 const LIVE_TARGET = {
   providerCode: 'cpx_research',
   externalOfferId: '123',
-  trackingBaseUrl: 'https://offers.cpx-research.invalid/click',
+  trackingBaseUrl: 'https://offers.cpx-research.invalid/index.php',
 };
 
 /** get_offer_tracking_target resolves; the mint returns the server-minted id. */
@@ -71,6 +74,16 @@ beforeEach(() => {
   rpcMock.mockReset();
   sessionMock.mockReset();
   sessionMock.mockResolvedValue({ id: USER_ID });
+  // The adapter reads these lazily at call time, so the suite must provision them the
+  // way a deployment does. Without CPX_APP_ID the adapter now fails closed - which is
+  // the point, and is asserted explicitly below.
+  process.env.CPX_APP_ID = CPX_APP_ID;
+  process.env.CPX_SECURE_HASH = CPX_SECRET;
+});
+
+afterEach(() => {
+  delete process.env.CPX_APP_ID;
+  delete process.env.CPX_SECURE_HASH;
 });
 
 describe('POST /api/providers/offers/[id]/click', () => {
@@ -160,5 +173,50 @@ describe('POST /api/providers/offers/[id]/click', () => {
     expect(response.status).toBe(201);
     expect(new URL(payload.url).host).toBe('offers.cpx-research.invalid');
     expect(new URL(payload.url).searchParams.get('subid_1')).toBe(MINTED_TRACKING_ID);
+  });
+
+  // THE PARAMETER THAT MADE THE PREVIOUS LINK UNUSABLE. CPX cannot attribute a click
+  // to an app it was not told about, so a link without `app_id` produces conversions
+  // that belong to nobody - including us.
+  it('issues a link carrying the app_id CPX requires for attribution', async () => {
+    mockLiveOffer();
+
+    const response = await route.POST(request(), context());
+    const payload = (await response.json()) as { url: string };
+
+    expect(new URL(payload.url).searchParams.get('app_id')).toBe(CPX_APP_ID);
+  });
+
+  // THE ATTRIBUTION SECURITY PROPERTY AT THE ROUTE LEVEL. `ext_user_id` is the field
+  // CPX documents for postback/s2s/webhook communication, so a caller able to set it
+  // would be able to attribute a click - and therefore a payout - to another account.
+  // The route takes it from the session and from nowhere else.
+  it('puts the SESSION user in ext_user_id, so a click cannot be attributed elsewhere', async () => {
+    mockLiveOffer();
+
+    const response = await route.POST(
+      request({ userId: '99999999-9999-9999-9999-999999999999' }),
+      context(),
+    );
+    const payload = (await response.json()) as { url: string };
+
+    expect(new URL(payload.url).searchParams.get('ext_user_id')).toBe(USER_ID);
+    expect(payload.url).not.toContain('99999999-9999-9999-9999-999999999999');
+  });
+
+  // THE FAIL-CLOSED PATH AT THE ROUTE LEVEL. An unconfigured deployment must not hand
+  // out a link that cannot be attributed. A 500 the operator can see beats traffic
+  // that looks like it worked and silently attributes nothing.
+  it('fails rather than issuing an unattributable link when CPX_APP_ID is unset', async () => {
+    mockLiveOffer();
+    delete process.env.CPX_APP_ID;
+
+    const response = await route.POST(request(), context());
+
+    expect(response.status).toBe(500);
+    // And nothing was opened for the user. The participation exists but no link was
+    // handed out, which is inert rather than misleading.
+    const beginCall = rpcMock.mock.calls.find((call) => call[0] === 'begin_provider_participation');
+    expect(beginCall).toBeDefined();
   });
 });

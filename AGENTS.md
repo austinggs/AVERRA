@@ -120,9 +120,18 @@ state change. See docs/adr/.
   064 provisional provider earnings: a READ-ONLY projection of estimated earnings from
   non-LIVE providers. No table, no ledger entry, no reward, no payout. It exists so a
   CANDIDATE provider's real callbacks are visible without becoming money.
+  065 CPX LIVE activation: promotes the provider with all seven doc 07 gates recorded,
+  seeds the `provider:cpx_research` funding source and the survey-wall offer, and adds
+  the `public.settle_provider_period` wrapper. That wrapper matters more than it looks:
+  `app_private.settle_provider_period` is the ONLY path to AVAILABLE and PostgREST
+  cannot resolve an RPC against an unexposed schema, so until 065 a PENDING reward had
+  no reachable release at all. 065 also REMOVES `href` from `list_live_offers` - see
+  "A provider entry link is not a URL" below.
 - `supabase/tests/` - pgTAP suites (546 assertions, 23 files). Executed and green as
   of CR-0034b; run them with `npm run test:db`, which needs no Docker. Earlier they had
-  NEVER run, and every one of them held at least one defect. Each suite declares its OWN
+  NEVER run, and every one of them held at least one defect. `cpx_live.sql` (CR-0036)
+  is the first suite to assert against the REAL seeded provider rather than fixtures,
+  and it has not been executed - see the CR. Each suite declares its OWN
   `begin;` - the runner does not add one. Every suite ends with
   `select * from finish();`, NOT a bare `finish()`.
 - `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
@@ -220,6 +229,38 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
 - CR-0035 - Economic simulation baseline. Documentation only: docs 88 and 89 added,
   docs 15-34 superseded and retained verbatim. Mining is DORMANT, not removed; only
   CR-0045 may retire it, and only after CR-0036 audits its data.
+- CR-0036 - CPX Research LIVE activation. Migration 065 plus the `createTrackingLink`
+  fix below. NOTE: this is the provider activation, not the CR-0036 mining audit in the
+  CR-0035 roadmap - two unrelated changes ended up with the same number. The mining
+  audit keeps its place in the sequence and remains unstarted.
+
+## A provider entry link is not a URL
+
+The rule CPX activation cost an audit to learn, and the shape recurs for every vendor.
+
+`offers.tracking_base_url` is the DESTINATION ONLY. It cannot carry `app_id`,
+`ext_user_id`, `secure_hash` or `subid_1`, because the first two are mandatory per CPX's
+current documentation and the last two exist only for a signed-in user and a single
+click. So a read wrapper that returns `tracking_base_url` as an `href` hands the client a
+link that cannot be attributed, and following it looks like success: HTTP 200 to the user,
+a real survey completed, a conversion nobody can tie to anyone.
+
+CR-0031 through CR-0034b carried exactly that field and the earn page rendered it as a
+direct anchor. Migration 065 removes it, and the page now calls
+`POST /api/providers/offers/[id]/click`, which mints the participation from the VERIFIED
+SESSION and returns the finished link.
+
+Three consequences that look like unnecessary complications:
+
+1. **A cached listing cannot produce a provider link.** `list_live_offers` takes no user
+   id and is granted to `service_role`, so anything per-user is out of scope by
+   construction. Do not "fix" a missing link by adding one to the listing.
+2. **Two hashes, one secret.** CPX signs `md5(trans_id + "-" + secret)` inbound and
+   `md5(ext_user_id + "-" + secret)` outbound. Same separator, same secret, different
+   input, and conflating them throws nothing - it just silently never attributes.
+3. **A vendor's signature authenticates what it covers, not what you wish it covered.**
+   The postback MAC covers `trans_id` alone, so it proves CPX sent the callback and proves
+   nothing about `subid_1`. See below.
 
 ## A provider withdrawal is a new row, not an UPDATE
 
@@ -320,6 +361,64 @@ asserting something PostgreSQL does not promise.
 
 Verified by re-injection into the live database: re-granting EXECUTE, and reducing the
 gate to amount-only, both fail named assertions.
+
+## A settlement gate that opens is not a settlement that holds
+
+The rule the 90-day maturity window cost a discovery to learn, and it is the one
+gate in this system that can be correct at the moment it fires and still lose money.
+
+CR-0033 made money **correct** at release: a MATCHED settlement, exact amount, exact
+count. It never asked whether the release would still be **reversible** a quarter
+later. CPX's publisher terms give the *advertiser* - not CPX - a 60 to 90 day window
+to devalidate a completion, and `status=1` only means CPX logged it locally. So the
+clawback can arrive long after the user has the money.
+
+Four existing behaviours compose into a silent permanent loss:
+
+| Fact | Where |
+|------|-------|
+| `post_ledger_entry` raises rather than let a user balance go negative | `004` |
+| Reserving a withdrawal DEBITS `EARNED_REWARD`, taking it to zero | `007` |
+| `reverse_reward` reverses by DEBITING `EARNED_REWARD` in full | `010` |
+| `settle_provider_period` never checked that the period was OLD | `059` |
+
+```
+settle day 7 -> withdraw day 8 -> devalidate day 75
+-> DEBIT EARNED_REWARD -> would be negative -> RAISES -> transaction aborts
+```
+
+CPX's dashboard shows the clawback delivered. `evidence.ts` records
+`REVERSAL_APPLY_FAILED`, so it is *visible* - and the money is still gone. There is no
+`debt`, `recovery`, `overdraft` or `write_off` mechanism anywhere in this schema, so
+the loss is permanent rather than deferred.
+
+Three rules follow, and the first is the one people will try to undo:
+
+1. **The window is not configurable.** No parameter, no provider column, no settings
+   row. A tunable maturity window is a defect one `UPDATE` from returning, and the
+   failure mode when it is lowered is silent. Same reasoning as `AVAILABLE` in
+   `transition_reward`: no parameter exists that could wave it through, because there
+   is no parameter at all.
+2. **Anchor on the period's END, never its start.** `p_period_end` bounds the
+   *youngest* conversion in the period. A period that ended 91 days ago has had 91
+   days of advertiser exposure; one that *started* 91 days ago has not. Anchoring on
+   the start is the plausible-looking bug.
+3. **Refuse before reconciling, and write nothing.** The check runs before
+   `reconcile_provider_period` so a refused report creates no settlement row, no audit
+   event and no transition. A row written on refusal collides with
+   `(provider_id, provider_reference)` on the retry and leaves an operator believing
+   the period was settled. `reconcile_provider_period` stays deliberately ungated -
+   investigating an immature period is a legitimate read.
+
+**Why every reversal test passed.** They all reverse a reward that is still `PENDING`
+and still holding its balance. That is the only case that works, and it is the case
+least likely to occur in production once a provider settles on any real cadence. A
+test suite for a clawback path that never exercises a clawback that cannot execute is
+measuring the wrong thing.
+
+**The cost is real and was accepted knowingly:** users wait ~90 days longer to be
+paid. That is what CPX's network costs in time. The alternative is paying users and
+being unable to take the money back.
 
 ## A partial settlement is not a settlement
 

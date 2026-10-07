@@ -144,10 +144,90 @@ ruled on before being written down. The alternative - making all prices `BIGINT`
 units - was rejected because it cannot represent the specification's own one-kobo coin
 price with usable precision. Flagged rather than silently adopted.
 
-## Sequence handed to CR-0036
+## AMENDMENT CR-0035A — sequence correction (documentation only)
 
-CR-0036 mining-data audit and dependency inventory (read-only) - CR-0037 economic
-domain foundation - CR-0038 assets and seasons - CR-0039 market engine - CR-0040
-trading - CR-0041 fictional crypto - CR-0042 store, generalizing CR-0017 rather than
-duplicating it - CR-0043 jobs and life - CR-0044 navigation and estimated earnings -
-CR-0045 final mining retirement, the only destructive change.
+- **Status:** Complete. Documentation only. Still no code, migration, schema, test,
+  UI, API, configuration or mining-data change.
+- **Date:** 2026-10-07
+- **Approved CR-0035 baseline:** commit `13456ec5ada5df652f6b4f40c6c77cbd3de5bbec`
+- **Trigger:** explicit owner instruction to make the implementation sequence below
+  authoritative and internally consistent.
+
+### Why the sequence was reordered
+
+Two changes of substance, ordered by risk and prerequisite rather than by how
+visible a feature is.
+
+1. **The store moved CR-0042 -> CR-0044.** It is the only surface touching the
+   real-money order, product, entitlement and payment-submission machinery from
+   CR-0017, and the only one carrying the provisional-earnings projection. At
+   CR-0042 it would have gone into production before the virtual economy it sells
+   into existed.
+2. **Player-to-player trades and the marketplace moved CR-0044 -> CR-0042.** They
+   are pure Layer-1 virtual mechanics whose prerequisites (assets CR-0038,
+   trading CR-0040) are complete by CR-0042, and they touch no real-money surface.
+   Bundling them with navigation behind the roadmap's highest-risk work held
+   low-risk work for no benefit.
+
+A third consequence: the previous ordering placed navigation re-pointing in
+CR-0044 on the assumption that something would exist to point at. It may now be
+included only once the replacement surfaces are ready, because re-pointing
+navigation earlier leaves users with a dead link — a production regression, not a
+retirement.
+
+### Corrected sequence
+
+    CR-0036  Mining-data audit and dependency inventory. STRICTLY READ-ONLY,
+             and the FIRST step.
+    CR-0037  Economic-simulation foundation. First IMPLEMENTATION.
+    CR-0038  Asset catalogue and seasons. No live market simulation yet.
+    CR-0039  Deterministic market engine.
+    CR-0040  Trading.
+    CR-0041  Fictional crypto. No real blockchain custody.
+    CR-0042  Player-to-player trades and marketplace.
+    CR-0043  Jobs and life economy.
+    CR-0044  Store and governed reward / UI integration, generalizing CR-0017.
+    CR-0045  Final mining retirement. The ONLY destructive CR.
+
+Per-CR scope is authoritative in `88_ECONOMIC_SIMULATION.md` section 8. This
+change record carries the summary only, so the two cannot drift on scope.
+
+### Consistency repairs required by the reorder
+
+Sections 6 and 7 of `88` named CR numbers that section 8 moved. They were updated
+in the same change, which is the point: a document whose own sections disagree is
+worse than one that is merely incomplete.
+
+| Location | Was | Now |
+| --- | --- | --- |
+| `88` §6 | CR-0042 generalizes the paid-perks system | CR-0044 |
+| `88` §7 | "the existing mining-data audit" | CR-0036 named, plus four explicit CR-0045 preconditions |
+| `88` §10 | "Implementation begins at CR-0036" | CR-0036 is the first step and implements nothing; CR-0037 is the first implementation |
+| `88` header | Version 1.0 | Version 1.1, with an AMENDMENT CR-0035A block |
+
+### Not changed
+
+Sections 1-5, 9 and 10 of `88`; every architectural law; the three-layer
+separation; the BIGINT and NUMERIC typing rules in `89`; the four retirement stages;
+and the rule that CR-0036 is read-only and first. **No substantive CR-0035 design
+was altered.**
+
+### Known inconsistency left in place, deliberately
+
+`docs/DISCREPANCIES.md` Q-53 and Q-55 still attribute the store and the
+`paid_order_status` enum mapping to CR-0042. Both are now CR-0044. This correction
+was scoped to `88` and to this change record, so the discrepancy file was left
+untouched rather than edited outside its authorised scope. **It should be
+corrected to CR-0044 before CR-0044 is implemented**, or a future implementer will
+read a decision that no longer matches the roadmap.
+
+### Validation actually performed
+
+| Check | Result |
+| --- | --- |
+| `88` §8 sequence matches the instructed sequence | yes, all 10 entries |
+| CR-0036 first and marked read-only | yes |
+| No substantive CR-0035 design altered | yes — sections 1-5, 9, 10 untouched |
+| Files changed | `88` and this record only |
+| Commit traceability | `13456ec5ada5df652f6b4f40c6c77cbd3de5bbec` recorded in both |
+| Code gates | not applicable — no code changed |

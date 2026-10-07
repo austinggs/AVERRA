@@ -4,22 +4,28 @@ import { errorFields } from '@/lib/observability/errors';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, EmptyState, Pill } from '@/components/ui/Card';
 import { ButtonLink, PillTabs } from '@/components/ui/Button';
+import { OfferActions } from '@/components/providers/OfferActions';
 
 export const metadata = { title: 'Earn - Averra' };
 
 // Offers and surveys (doc 13 offerwall, doc 14 surveys).
 //
-// WHY THIS PAGE SHOWS SO LITTLE RIGHT NOW
+// WHY THIS PAGE USED TO SHOW SO LITTLE
 //
-// No provider is live. Doc 08 and doc 07 keep every one of the fourteen real
-// providers in CANDIDATE until signature documentation, sandbox testing,
-// economics, commercial approval and compliance review are all complete. So
-// there is deliberately no offer to show, and this page says so plainly rather
-// than seeding placeholder offers that would imply earning is available.
+// No provider was live. Doc 08 and doc 07 kept all fourteen candidate providers in
+// CANDIDATE until signature documentation, sandbox testing, economics, commercial
+// approval and compliance review were complete. So there was deliberately no offer to
+// show, and this page said so plainly rather than seeding placeholder offers that would
+// imply earning was available.
 //
-// The payout figures are DISPLAY ONLY. Doc 13 PRESENTATION forbids overstating
-// certainty, and a payout shown here is never a credit: doc 12 verification and
-// the Reward Engine decide that, server-side.
+// CPX RESEARCH IS LIVE FROM MIGRATION 065. Its wall appears here once its offer row is
+// active, which the wrapper still filters on server-side - so this page cannot surface
+// a CANDIDATE provider's inventory even if it were modified.
+//
+// The payout figures are DISPLAY ONLY, and CPX's are deliberately NULL: the wall pays a
+// different amount to every matched respondent, so there is no single number to show.
+// Doc 13 PRESENTATION forbids overstating certainty, and a payout shown here is never a
+// credit: doc 12 verification and the Reward Engine decide that, server-side.
 
 type TabKey = 'offers' | 'surveys';
 
@@ -43,7 +49,6 @@ type EarnItem = {
   payout: string | null;
   payoutUnit: string | null;
   tag: string | null;
-  href: string | null;
 };
 
 export default async function EarnPage({
@@ -133,18 +138,17 @@ export default async function EarnPage({
                   {item.tag ? <Pill>{item.tag}</Pill> : null}
                 </div>
 
-                {item.href ? (
-                  <div className="mt-4">
-                    <a
-                      href={item.href}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
-                      className="inline-flex min-h-11 items-center justify-center rounded-pill bg-brand-500 px-5 text-sm font-semibold text-white shadow-tile transition-colors hover:bg-brand-600"
-                    >
-                      Open offer
-                    </a>
-                  </div>
-                ) : null}
+                {/*
+                  A BUTTON, NOT AN ANCHOR. The listing wrapper no longer returns an href:
+                  a raw `tracking_base_url` carries no app_id, ext_user_id or subid_1,
+                  so following it directly sent the user to CPX with nothing
+                  identifying and the conversion could not be attributed to anyone.
+                  Opening an offer goes through the click route, which mints the
+                  tracking identity server-side from the verified session.
+                */}
+                <div className="mt-4">
+                  <OfferActions offerId={item.id} />
+                </div>
               </Card>
             </li>
           ))}

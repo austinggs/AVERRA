@@ -731,6 +731,21 @@ because both the amount and the IP defect were invisible to invented payloads.
   "`&status=1` (pending)" in the advisory panel. We treat `status=1` + `type=complete` as
   payable. If `1` can mean pending, an unfinished survey could be paid. **Needs written
   confirmation from CPX**; the test tool cannot distinguish the two.
+  - **RESOLVED by research 2026-10-10 (CR-0037), and it is worse than a wording
+    problem.** The contradiction is real and there is no vendor fix for it: `status=1`
+    means CPX logged the completion **locally**, while the **advertiser** - not CPX -
+    decides validity on a 60-to-90-day window. So "completed" and "pending" describe
+    two different real things, and `1` never guaranteed payability.
+  - **An unfinished survey is still not payable.** Nothing in this finding says a
+    completion is forged; it says a *real* completion can still be devalidated later.
+    Our protection is the maturity gate, not a tighter read of `status=1`.
+  - **The consequence was financial, not cosmetic.** Because a devalidation can arrive
+    ~90 days after release, and a withdrawn reward cannot be debited, the settlement
+    gate could claw back nothing while CPX reported the clawback delivered. Migration
+    066 now refuses to settle any period that ended less than 90 days ago. See
+    `docs/DISCREPANCIES.md` Q-60.
+  - Written CPX confirmation is still worth having for Q1 in the outreach draft, but it
+    is no longer the blocking question — the 90-day hold covers the risk either way.
 - **Migration 057, the append-only reversal.** `reverses_conversion_id`, a `:2` / `:-2`
   event suffix so the follow-up is not collapsed by `uq_provider_conversions_event`, and
   `apply_provider_reversal` calling `reverse_conversion`. Gated on the point above.

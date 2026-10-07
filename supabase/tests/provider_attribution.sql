@@ -36,7 +36,7 @@
 -- `finish()`.
 begin;
 
-select plan(43);
+select plan(47);
 
 -- Defensive cleanup. This suite creates rows, and an ABORTED suite commits its
 -- fixture (the runner's rollback cannot undo an aborted transaction). See AGENTS.md.
@@ -205,12 +205,18 @@ select f.provider_id, f.user_id, 'pgattr-track-1',
   'STARTED'
 from pgattr_fixture f;
 
+-- BACKDATED, and this is load-bearing rather than incidental.
+--
+-- Reconciliation selects conversions by `created_at`, and migration 066 requires a
+-- period to be at least 90 days old before it can release money. A fixture dated
+-- `now()` could therefore never be settled at all, and the settlement assertions
+-- below would be testing a refusal instead of a gate.
 insert into app.provider_conversions (
   provider_id, provider_event_id, source_type, user_id, tracking_id,
-  event_type, status, gross_value_minor, currency
+  event_type, status, gross_value_minor, currency, created_at
 )
 select provider_id, 'pgattr-conv-1', 'OFFER', user_id, 'pgattr-track-1',
-  'cpx:complete', 'VALIDATED', 5000, 'NGN-kobo'
+  'cpx:complete', 'VALIDATED', 5000, 'NGN-kobo', now() - interval '150 days'
 from pgattr_fixture;
 
 -- The reward, PENDING. This is the row the gate must protect.
@@ -282,11 +288,17 @@ select is(
 -- RECONCILIATION AND THE SETTLEMENT GATE
 -- =============================================================================
 
--- A window that contains the fixture conversion.
+-- A window that contains the fixture conversion AND has actually matured.
+--
+-- `ends_at` is 100 days back, deliberately past the 90-day boundary migration 066
+-- enforces, and `starts_at` is older still so the backdated conversion sits inside
+-- it. A window ending `now() + 1 day` - which is what this fixture used to be -
+-- would now be refused outright, and every settlement assertion below would be
+-- measuring the maturity gate rather than the reconciliation gate.
 create temporary table pgattr_period as
 select
-  now() - interval '1 day' as starts_at,
-  now() + interval '1 day' as ends_at;
+  now() - interval '200 days' as starts_at,
+  now() - interval '100 days' as ends_at;
 
 -- `expected_amount_minor` is COMPUTED, not trusted from the report. The fixture has
 -- exactly one CONVERTED conversion worth 5000.
@@ -306,6 +318,60 @@ select is(
      (select ends_at from pgattr_period)) ->> 'expectedConversionCount')::integer,
   1::integer,
   'and computes the count from our own CONVERTED rows'
+);
+
+-- =============================================================================
+-- THE MATURITY GATE (migration 066)
+--
+-- A reversal arriving AFTER the user has withdrawn cannot be executed at all:
+-- `post_ledger_entry` refuses to let a user-facing balance go negative, and
+-- reserving a withdrawal debits EARNED_REWARD to zero. There is no debt or
+-- recovery mechanism anywhere in this schema, so the late clawback is not a
+-- recoverable loss - it is a silent one, while the vendor shows it delivered.
+--
+-- A period therefore cannot release money until the advertiser's right to
+-- devalidate it has expired.
+-- =============================================================================
+
+-- 89 days back: inside the window, so refused.
+select throws_ok(
+  $$ select app_private.settle_provider_period(
+       (select provider_id from pgattr_fixture), 'pgattr-immature',
+       (select starts_at from pgattr_period), now() - interval '89 days',
+       5000, 1, null) $$,
+  '23514',
+  'settle_provider_period: period_end is inside the 90-day maturity window',
+  'a period that ended 89 days ago is refused: the advertiser can still devalidate it'
+);
+
+-- The refusal must write NOTHING. A row recorded here would collide with
+-- (provider_id, provider_reference) on the retry and leave an operator believing
+-- the period had been settled while nothing was.
+select is(
+  (select count(*)::integer from app.provider_settlements
+    where provider_reference = 'pgattr-immature'),
+  0,
+  'a refused period writes NO settlement row, so the operator can retry cleanly'
+);
+
+-- THE CONTROL. 100 days back is outside the window, so the same figures are
+-- accepted. Without this arm the assertion above would also pass against a
+-- function that refuses every period - the failure mode of a one-armed test.
+select lives_ok(
+  $$ select app_private.settle_provider_period(
+       (select provider_id from pgattr_fixture), 'pgattr-mature-control',
+       (select starts_at from pgattr_period), now() - interval '100 days',
+       4999, 1, null) $$,
+  'CONTROL: the identical report one day later is NOT refused, so this is a window'
+);
+
+-- And maturity did not weaken the MATCHED gate: 4999 still does not reconcile
+-- against the fixture's 5000.
+select is(
+  (select status::text from app.provider_settlements
+    where provider_reference = 'pgattr-mature-control'),
+  'VARIANCE'::text,
+  'a matured period still reconciles normally - maturity did not weaken MATCHED'
 );
 
 -- THE GATE, in its most important form: a report that does NOT match settles nothing.

@@ -1,10 +1,21 @@
 AVERRA — ECONOMIC SIMULATION (AUTHORITATIVE)
 
 Document: 88_ECONOMIC_SIMULATION.md
-Version: 1.0
+Version: 1.1
 Status: Approved planning baseline
 Supersedes: 15-34 (Mining Game) — superseded 2026-10-07 by CR-0035
 Last reviewed: 2026-10-07
+
+AMENDMENT CR-0035A (2026-10-07) - SEQUENCE CORRECTION ONLY
+- Approved CR-0035 baseline: commit 13456ec5ada5df652f6b4f40c6c77cbd3de5bbec.
+- Sections 1-5, 9 and 10 are UNCHANGED. No substantive CR-0035 design was altered.
+- Section 8, CHANGE-RECORD SEQUENCE, is corrected per explicit owner instruction.
+  Sections 6 and 7 are updated ONLY where they name a CR number that the section 8
+  reorder moved, so the document stays internally consistent.
+- The substantive difference is CR-0042 and CR-0044. The store moves from CR-0042
+  to CR-0044; player-to-player trades and the marketplace move from CR-0044 to
+  CR-0042. The reason is recorded in section 8, at the end.
+- CR-0036 remains the FIRST step and remains strictly read-only.
 
 PURPOSE
 
@@ -129,11 +140,16 @@ component that does not exist.
 6. STORE AND MONETIZATION — GENERALIZE, DO NOT DUPLICATE
 ---------------------------------------------------------------------------
 
-CR-0042 generalizes the EXISTING paid-perks / funding-spend system (CR-0017).
+CR-0044 generalizes the EXISTING paid-perks / funding-spend system (CR-0017).
 
 There MUST NOT be a second store, a second order table, or a second payment-order
 architecture. The new game store is an extension of the existing paid-perk order,
 product, entitlement and manual-payment-submission machinery.
+
+The store is sequenced at CR-0044, behind the whole virtual economy. It is the
+highest-risk surface in this roadmap because it is the only one that touches the
+real-money order machinery, and it is therefore last among the virtual-economy
+change records. See section 8 for the reason the store was moved here.
 
 ---------------------------------------------------------------------------
 7. MINING RETIREMENT — DORMANT, NOT REMOVED
@@ -155,29 +171,149 @@ data and referenced by the real ledger. Retirement proceeds in four ordered stag
 
 RULES
 
-- CR-0045 is the ONLY destructive retirement change record.
-- No earlier CR may drop, truncate, archive or rewrite mining data.
-- The existing mining-data audit remains a hard prerequisite to Stage 4.
-- Mining is not deleted because it is old. It is deleted only after its absence
-  from production is proven and its data has been audited.
+CR-0045 is the ONLY destructive retirement change record. Every one of the
+following MUST hold before CR-0045 may begin:
+
+  1. The CR-0036 mining-data audit is complete.
+  2. Every mining dependency has been re-pointed away from mining.
+  3. Production absence of mining has been DEMONSTRATED, with evidence.
+  4. User-data retention and migration requirements are resolved.
+
+No premature DROP, TRUNCATE, archive or rewrite is permitted. No earlier CR may
+drop, truncate, archive or rewrite mining data.
+
+Navigation re-pointing is CR-0044 work, and it may be included there ONLY after
+the underlying replacement surfaces are ready. Stage 2 therefore cannot begin
+before the surfaces it re-points to exist.
+
+Mining is not deleted because it is old. It is deleted only after its absence
+from production is proven and its data has been audited.
 
 ---------------------------------------------------------------------------
 8. CHANGE-RECORD SEQUENCE
 ---------------------------------------------------------------------------
 
   CR-0035  This document. Documentation-only baseline amendment. No code.
-  CR-0036  Mining-data audit and dependency inventory. Read-only.
-  CR-0037  Economic-simulation domain foundation (game account, virtual cash).
-  CR-0038  Asset catalogue, seasons, game audit events.
-  CR-0039  Market engine (deterministic lazy-on-read prices, market states).
-  CR-0040  Trading (market orders, positions, P&L, fees).
-  CR-0041  Fictional crypto (virtual wallets, identifiers, transfers).
-  CR-0042  Store and manual payments, GENERALIZING CR-0017. No second store.
-  CR-0043  Jobs, wages, life, expenses.
-  CR-0044  Navigation re-point, estimated-earnings surface, custom trades.
+           Approved at commit 13456ec5ada5df652f6b4f40c6c77cbd3de5bbec, then
+           corrected by CR-0035A. Sequence correction only.
+
+  CR-0036  Mining-data audit and dependency inventory. STRICTLY READ-ONLY.
+           This is the FIRST step. It implements nothing.
+             - Read-only production audit.
+             - Inventory existing mining users and data.
+             - Inventory every dependency from mining into funding, purchases,
+               rewards, ledger, risk, audit, navigation, APIs and tests.
+           It MUST NOT: change schema, shut mining down, delete mining, mutate
+           data, or begin any new economic-simulation implementation.
+
+  CR-0037  Economic-simulation foundation.
+             - Game account and economic identity.
+             - Virtual cash.
+             - Core economic audit events.
+             - Server-authoritative foundation.
+             - Feature flag.
+             - Security, RLS, idempotency and concurrency foundations.
+
+  CR-0038  Asset catalogue and seasons.
+             - Stocks and assets catalogue foundation.
+             - Seasons.
+             - Asset metadata.
+             - NO live market simulation yet.
+
+  CR-0039  Deterministic market engine.
+             - Lazy-on-read.
+             - Canonical epoch.
+             - Deterministic seed.
+             - NUMERIC(38,12) pricing, per 89 section 2.
+             - Deterministic final rounding, per 89 section 5.
+             - Market state and price computation.
+
+  CR-0040  Trading.
+             - Orders.
+             - Positions.
+             - P&L.
+             - Fees.
+             - Server-authoritative execution.
+             - Idempotency and concurrency.
+
+  CR-0041  Fictional crypto.
+             - Virtual coins.
+             - Virtual wallet identifiers.
+             - Transfers.
+             - Simulated transaction hashes, confirmations and network mechanics
+               where appropriate.
+             - NO real blockchain custody and NO external transfer. See section 5.
+
+  CR-0042  Player-to-player trades and marketplace.
+             - Custom trades.
+             - Atomic acceptance.
+             - Marketplace listings.
+             - Reputation and trade history.
+             - No duplicated monetary system.
+
+  CR-0043  Jobs and life economy.
+             - Jobs.
+             - Wages.
+             - Expenses.
+             - Skills.
+             - Businesses and life-economy foundations.
+
+  CR-0044  Store and governed reward and UI integration.
+             - Generalize the existing paid-perks and funding-spend system
+               (CR-0017). See section 6.
+             - NO second store, order or payment architecture.
+             - Integrate the already-existing provisional earnings projection
+               (CR-0034b, migration 064) WITHOUT turning it into money.
+             - Virtual economy, provisional earnings and governed real-money
+               rewards stay strictly separated. See section 2.
+             - Navigation and re-pointing may be included ONLY after the
+               underlying replacement surfaces are ready.
+
   CR-0045  Final mining retirement. The ONLY destructive CR.
+             - ONLY after the CR-0036 audit.
+             - ONLY after all mining dependencies have been re-pointed.
+             - ONLY after production absence has been demonstrated.
+             - ONLY after user-data retention and migration requirements are
+               resolved.
+             - NO premature DROP, TRUNCATE, archive or rewrite.
 
 Every CR MUST record its own change record per 81_CHANGE_MANAGEMENT.md.
+
+WHY THE SEQUENCE WAS REORDERED (CR-0035A)
+
+Approved baseline: commit 13456ec5ada5df652f6b4f40c6c77cbd3de5bbec.
+
+Two changes of substance, both ordered by RISK and PREREQUISITE rather than by how
+visible a feature is:
+
+CHANGE A: THE STORE MOVED CR-0042 -> CR-0044.
+   The store is the only surface in this roadmap that touches the real-money order,
+   product, entitlement and payment-submission machinery built by CR-0017, and the
+   only one that carries the provisional-earnings projection. Under the previous
+   ordering it sat in the middle, between fictional crypto and jobs, which would
+   have put a real-money-adjacent surface into production before the virtual economy
+   it sells into even existed. It is now last among the virtual-economy change
+   records, behind assets, market, trading, crypto, P2P and life.
+
+CHANGE B: PLAYER-TO-PLAYER TRADES AND THE MARKETPLACE MOVED CR-0044 -> CR-0042.
+   Custom trades, atomic acceptance, marketplace listings and trade history are
+   pure Layer-1 virtual mechanics. Their prerequisites are assets (CR-0038) and
+   trading (CR-0040), both complete by CR-0042. They depend on no real-money surface
+   at all, so deferring them to CR-0044 - as the previous ordering did, bundled with
+   navigation - held low-risk work behind the roadmap's highest-risk work for no
+   benefit.
+
+One consequence is worth stating plainly. The previous ordering placed navigation
+re-pointing in CR-0044 alongside custom trades, on the assumption that something
+would exist to point at. Under the corrected sequence, navigation re-pointing may be
+included ONLY once the replacement surfaces are ready. Re-pointing navigation before
+that would leave users with a dead link, which is a production regression and not a
+retirement.
+
+NOT CHANGED: sections 1-5, 9 and 10, every architectural law, the three-layer
+separation, the BIGINT and NUMERIC typing rules in 89, the four retirement stages in
+section 7, and the fact that CR-0036 is first and strictly read-only. No substantive
+CR-0035 design was altered by this correction.
 
 ---------------------------------------------------------------------------
 9. KNOWN COLLISIONS — RESOLVE BEFORE IMPLEMENTING
@@ -208,4 +344,5 @@ d) The external spec names price columns with a _minor suffix while also requiri
 
 This document authorizes NO change to: code, migrations, database schema,
 application code, tests, configuration, feature flags, UI, API routes, or mining
-data. CR-0035 is documentation-only. Implementation begins at CR-0036.
+data. CR-0035 and CR-0035A are documentation-only. The first step is CR-0036, which
+is strictly read-only and implements nothing. The first IMPLEMENTATION is CR-0037.

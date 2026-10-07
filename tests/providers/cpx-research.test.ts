@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createCpxAdapter, CPX_POSTBACK_IPS } from '@/lib/providers/adapters/cpx-research';
 import { cpxReversalEventId } from '@/lib/providers/adapters/cpx-contract';
@@ -518,39 +518,145 @@ describe('the live CPX postback of 2026-10-04', () => {
   });
 
   // ===========================================================================
-  // createTrackingLink - the subid_1 carrier (migration 063)
+  // createTrackingLink - the documented CPX entry URL
+  //
+  // CPX's IFRAME TAG documentation (https://cpx-research.com/main/en/doc.php):
+  //
+  //   https://offers.cpx-research.com/index.php?app_id={app_id}
+  //     &ext_user_id={unique_user_id}&secure_hash={secure_hash}
+  //     &username={user_name}&email={user_email}&subid_1=&subid_2=
+  //
+  // with "e.g. for php md5({unique_user_id}-{app_secure_hash})" for the hash.
+  //
+  // THESE TESTS ARE REWRITTEN, NOT EXTENDED. The previous versions asserted that the
+  // link carried `subid_1` and nothing else - which was true, and was the defect.
+  // `app_id` was absent, so CPX could not tell which app a click belonged to and no
+  // click was attributable to Averra at all. Those assertions would have passed against
+  // a link that cannot work, which is worse than having no test.
+  //
+  // The outbound hash is REBUILT INDEPENDENTLY here, from the vendor's formula, rather
+  // than by calling `cpxEntrySecureHash`. Reusing the implementation would make the
+  // suite prove the code agrees with itself.
   // ===========================================================================
 
   describe('createTrackingLink', () => {
-    // The whole point of the link. Empty `subid_1` is what left every conversion as
-    // `UNRESOLVED_TRACKING_ID`, so this is the field that ends that.
-    it('carries the tracking id in subid_1, which the postback echoes back', async () => {
-      const link = await createCpxAdapter().createTrackingLink!({
+    const APP_ID = '16548';
+    const EXT_USER_ID = '9f8e7d6c-5b4a-4392-8180-7f6e5d4c3b2a';
+
+    beforeEach(() => {
+      process.env.CPX_APP_ID = APP_ID;
+      process.env.CPX_SECURE_HASH = SECRET;
+    });
+
+    afterEach(() => {
+      delete process.env.CPX_APP_ID;
+    });
+
+    function input(overrides: Record<string, unknown> = {}) {
+      return {
         externalId: '123',
         trackingId: 'av_0123456789abcdef0123456789abcdef',
-        baseUrl: 'https://offers.cpx-research.invalid/click',
-      });
+        userId: EXT_USER_ID,
+        baseUrl: 'https://offers.cpx-research.invalid/index.php',
+        ...overrides,
+      };
+    }
 
-      expect(link.url).toContain('subid_1=av_0123456789abcdef0123456789abcdef');
+    // THE MISSING PARAMETER. Everything else about the old link was fine; this one
+    // field was what made it unusable.
+    it('carries app_id, which CPX requires on every documented entry method', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      expect(new URL(link.url).searchParams.get('app_id')).toBe(APP_ID);
+    });
+
+    // Mandatory, unique per user, and documented as the field used for
+    // postback/s2s/webhook communication.
+    it('carries ext_user_id, the documented postback attribution field', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      expect(new URL(link.url).searchParams.get('ext_user_id')).toBe(EXT_USER_ID);
+    });
+
+    // The per-click identity OUR ingest resolves the paying user from. Distinct from
+    // ext_user_id, which must stay stable across sessions for CPX's respondent profile.
+    it('carries the tracking id in subid_1, which the postback echoes back', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      expect(new URL(link.url).searchParams.get('subid_1')).toBe(
+        'av_0123456789abcdef0123456789abcdef',
+      );
       expect(link.trackingId).toBe('av_0123456789abcdef0123456789abcdef');
+    });
+
+    // The documented outbound hash: md5(ext_user_id + '-' + secret). Rebuilt from the
+    // vendor's formula, not from the implementation.
+    it('signs the entry link with md5(ext_user_id + "-" + secret)', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      const expected = createHash('md5').update(`${EXT_USER_ID}-${SECRET}`, 'utf8').digest('hex');
+
+      expect(new URL(link.url).searchParams.get('secure_hash')).toBe(expected);
+    });
+
+    // THE OUTBOUND AND INBOUND HASHES ARE DIFFERENT. Same secret, different input.
+    // Conflating them produces a link CPX rejects or a postback we reject, and the
+    // failure is silent because nothing throws - it just never attributes.
+    it('does NOT reuse the inbound postback hash formula', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      const inboundShaped = createHash('md5')
+        .update(`some-trans-id-${SECRET}`, 'utf8')
+        .digest('hex');
+
+      expect(new URL(link.url).searchParams.get('secure_hash')).not.toBe(inboundShaped);
+    });
+
+    // THE FAIL-CLOSED PATH. A link with no app_id would send a real user to CPX and
+    // produce a conversion attributable to nobody - the exact silent failure this
+    // integration has already hit twice. An operator-visible error beats that.
+    it('refuses to build a link when CPX_APP_ID is not configured', async () => {
+      delete process.env.CPX_APP_ID;
+
+      await expect(createCpxAdapter().createTrackingLink!(input())).rejects.toThrow(/CPX_APP_ID/);
+    });
+
+    // A blank value is not a value. `'   '` would otherwise produce `app_id=%20%20%20`,
+    // which is a well-formed link to an app that does not exist.
+    it('refuses to build a link when CPX_APP_ID is blank', async () => {
+      process.env.CPX_APP_ID = '   ';
+
+      await expect(createCpxAdapter().createTrackingLink!(input())).rejects.toThrow(/CPX_APP_ID/);
+    });
+
+    // ext_user_id is MANDATORY. Without it the click cannot be tied to an account, so
+    // it is a conversion nobody could ever claim.
+    it('refuses to build a link with no verified user id', async () => {
+      await expect(
+        createCpxAdapter().createTrackingLink!(input({ userId: undefined })),
+      ).rejects.toThrow(/verified user id/);
+    });
+
+    // No configured destination means no link. Falling back to something would send a
+    // user onward with no attribution - the exact state this work exists to end.
+    it('refuses to build a link with no configured base URL', async () => {
+      await expect(
+        createCpxAdapter().createTrackingLink!(input({ baseUrl: undefined })),
+      ).rejects.toThrow(/no tracking base URL/);
     });
 
     // A base URL that already carries a query string must survive. String
     // concatenation onto `...?pub_id=7` produces a broken second `?`, which is exactly
     // the kind of defect that shows up only in production traffic.
     it('preserves a query already present on the base URL', async () => {
-      const adapter = createCpxAdapter();
-
-      const link = await adapter.createTrackingLink!({
-        externalId: '123',
-        trackingId: 'av_abc',
-        baseUrl: 'https://offers.cpx-research.invalid/click?pub_id=7&aff=9',
-      });
+      const link = await createCpxAdapter().createTrackingLink!(
+        input({ baseUrl: 'https://offers.cpx-research.invalid/index.php?pub_id=7&aff=9' }),
+      );
 
       const url = new URL(link.url);
       expect(url.searchParams.get('pub_id')).toBe('7');
       expect(url.searchParams.get('aff')).toBe('9');
-      expect(url.searchParams.get('subid_1')).toBe('av_abc');
+      expect(url.searchParams.get('subid_1')).toBe('av_0123456789abcdef0123456789abcdef');
       // Exactly one query string, not two concatenated ones.
       expect(link.url.split('?').length).toBe(2);
     });
@@ -558,38 +664,52 @@ describe('the live CPX postback of 2026-10-04', () => {
     // The tracking id is minted server-side and is hex. Percent-encoding it keeps a
     // future format change from silently corrupting the URL.
     it('URL-encodes the tracking id rather than pasting it in', async () => {
-      const link = await createCpxAdapter().createTrackingLink!({
-        externalId: '123',
-        trackingId: 'av_has spaces&symbols=1',
-        baseUrl: 'https://offers.cpx-research.invalid/click',
-      });
+      const link = await createCpxAdapter().createTrackingLink!(
+        input({ trackingId: 'av_has spaces&symbols=1' }),
+      );
 
       expect(link.url).not.toContain('spaces&symbols=1');
       expect(new URL(link.url).searchParams.get('subid_1')).toBe('av_has spaces&symbols=1');
-    });
-
-    // No configured destination means no link. Falling back to something would send a
-    // user onward with no attribution - the exact state this work exists to end.
-    it('refuses to build a link with no configured base URL', async () => {
-      await expect(
-        createCpxAdapter().createTrackingLink!({
-          externalId: '123',
-          trackingId: 'av_abc',
-        }),
-      ).rejects.toThrow(/no tracking base URL/);
     });
 
     // A destination the client could influence would let a caller send users anywhere
     // while the participation recorded a real offer. The URL comes from our own
     // `offers.tracking_base_url`, so this asserts the input shape has no other channel.
     it('takes the destination only from the supplied base URL', async () => {
-      const link = await createCpxAdapter().createTrackingLink!({
-        externalId: '123',
-        trackingId: 'av_abc',
-        baseUrl: 'https://offers.cpx-research.invalid/click',
-      });
+      const link = await createCpxAdapter().createTrackingLink!(input());
 
       expect(new URL(link.url).host).toBe('offers.cpx-research.invalid');
+    });
+
+    // Two different users must not receive the same link. If ext_user_id were dropped
+    // or overwritten, every user would look identical to CPX and their respondent
+    // profiles would merge - which is exactly what CPX's own wording warns against.
+    it('gives two users different ext_user_id and different subid_1', async () => {
+      const a = await createCpxAdapter().createTrackingLink!(input());
+      const b = await createCpxAdapter().createTrackingLink!(
+        input({
+          userId: '11111111-2222-4333-8444-555555555555',
+          trackingId: 'av_ffffffffffffffffffffffffffffffff',
+        }),
+      );
+
+      const ua = new URL(a.url).searchParams;
+      const ub = new URL(b.url).searchParams;
+
+      expect(ua.get('ext_user_id')).not.toBe(ub.get('ext_user_id'));
+      expect(ua.get('subid_1')).not.toBe(ub.get('subid_1'));
+      // The app is shared; the users are not.
+      expect(ua.get('app_id')).toBe(ub.get('app_id'));
+    });
+
+    // The SECRET MUST NEVER REACH THE BROWSER. This is the assertion that would fail if
+    // someone "fixed" the missing hash by moving configuration into a NEXT_PUBLIC_
+    // variable or a client component. npm run check:bundle is the second line of
+    // defence; this is the first, and it fails at unit-test speed.
+    it('never places the shared secret in the URL, only its md5', async () => {
+      const link = await createCpxAdapter().createTrackingLink!(input());
+
+      expect(link.url).not.toContain(SECRET);
     });
   });
 

@@ -2282,3 +2282,188 @@ minor unit as 100 virtual kobo per NGN, but never states the encoded integer. Th
 readings differ by 100x. `89` section 7 fixes it at 100,000,000 (virtual kobo). Not
 raised as a numbered question because there is no conflict between sources, only an
 omission in one of them.
+
+## Q-58 - our own docs asserted the CPX entry link was correct, and it was not
+
+**Found:** 2026-10-07, during CR-0036 (CPX LIVE activation).
+
+`docs/PROGRESS.md` recorded, after CR-0033b:
+
+> "Now we can build the link a person clicks to start a survey, and that link carries the
+> tracking code back to us. That is the piece that was missing."
+
+and the earn page rendered `offers.tracking_base_url` directly as an anchor. Both were
+true, and both described a link that cannot work.
+
+CPX's current official documentation (`https://cpx-research.com/main/en/doc.php`,
+IFRAME TAG section) requires `app_id` and `ext_user_id` on **every** entry method and
+states that `ext_user_id` "will also be used for postback/s2s/webhook communication".
+`createTrackingLink` set `subid_1` and nothing else, and the raw base URL carried no
+parameters at all.
+
+With no `app_id`, CPX cannot tell which app a click belongs to, so **no click was
+attributable to Averra**. A per-click tracking id inside it does not help, and the link
+returned HTTP 201 throughout, so every layer reported success.
+
+**Why this survived four CRs and a live postback.** Every gate that ran said the work was
+done: typecheck, lint, build, all four structural lints, 397 unit tests, and a pgTAP
+suite proving the LIVE machinery end to end. The tests were the actual problem - see
+below. Nothing in the repository ever compared our outbound link against the vendor's
+documented one, because CR-0030 had correctly recorded that the **postback** format was
+undocumented, and that finding was then over-generalised to the whole integration.
+
+**Two distinct lessons.**
+
+1. _A test that encodes a defect is worse than a missing test._ The old
+   `createTrackingLink` assertions checked that `subid_1` was present. They passed, and
+   they passed **against a link that cannot work** - they asserted the defect rather than
+   the contract. CR-0036 rewrote them against the vendor's documented URL, and proved the
+   rewrite by removing the `app_id` line and confirming three named failures before
+   restoring.
+
+2. _Fixture-only tests cannot detect a provider that is never enabled._
+   `provider_live_gate.sql` proves the LIVE machinery using `pglive_live`, and
+   deliberately never touches real rows - so every one of its assertions stayed green
+   while `cpx_research` sat at CANDIDATE for its entire life. `cpx_live.sql` (CR-0036) is
+   the first suite to assert against the real seeded provider, and it will fail if CPX is
+   deactivated without thought.
+
+**Also recorded:** CPX's documentation covers the ENTRY link in public but describes the
+postback only inside the publisher dashboard. "Undocumented" was true of the postback and
+was wrongly assumed true of the integration.
+
+**Resolution.** Migration 065 removes `href` from `public.list_live_offers` and the earn
+page now opens offers through `POST /api/providers/offers/[id]/click`, which mints the
+participation from the verified session. See `docs/change-records/CR-0036-cpx-live-activation.md`.
+
+## Q-59 - the settlement gate had no reachable entry point
+
+**Found:** 2026-10-07, during CR-0036.
+
+`app_private.settle_provider_period` (migration 059, amended by 061) is the ONLY reachable
+path from a provider conversion to an `AVAILABLE` reward, and
+`transition_reward_ungated` is revoked from every role including `service_role`. That is
+the CR-0033 design working exactly as intended.
+
+But PostgREST resolves an RPC only against an EXPOSED schema, and `app_private` is not
+exposed. So the function was **unreachable**: nothing could call it. Migration 058 added
+wrappers for the reversal commands for precisely this reason, and nobody noticed the
+settlement command had none.
+
+**Why it was invisible.** It could not matter until a provider went LIVE, because
+`settle_provider_period` only acts on `CONVERTED` conversions carrying a reward, and no
+reward existed. Every reward test in the corpus used a fixture provider and asserted the
+PENDING outcome - which is the correct assertion about the GATE and says nothing about
+whether the gate can be opened.
+
+**The failure it would have caused.** The moment CPX went LIVE, real rewards would be
+created at PENDING with no way to release them, and the only remedy an operator would
+reach for is a manual `UPDATE ... set state = 'AVAILABLE'`, which bypasses the
+reconciliation entirely. The gate that took two releases to build would have been the
+thing that got disabled, by the pressure of an apparently stuck balance.
+
+**Resolution.** Migration 065 adds the single-statement `public` wrapper, revoked from
+`public`/`anon`/`authenticated` and granted to `service_role` only, with the
+`transition_reward_ungated` revoke re-asserted in `cpx_live.sql`. A related gap in the
+same migration: `app.offers` and `app.surveys` seed none of the fourteen CANDIDATE
+providers, so even a LIVE provider with no row would show nothing - and `cpx_live.sql`
+asserts the CPX offer exists for that reason.
+
+## Q-60 - the settlement gate made money correct but not durable
+
+**Found:** 2026-10-10, during CR-0037.
+
+Research into CPX publisher behaviour resolved the long-standing `status=1` question
+(`docs/PROGRESS.md`): `status=1` means CPX logged the completion, **not** that the
+provider will pay. The advertiser decides validity, and CPX's publisher terms give
+the advertiser a **60 to 90 day window** to devalidate it retroactively.
+
+That is not a UI wording problem. It is a settlement cycle that outlives ours, and it
+contradicts an assumption the schema had been making since CR-0033.
+
+**The defect.** `settle_provider_period` is the only reachable path to `AVAILABLE`, and
+its only period check was `p_period_end <= p_period_start`. Nothing required the period
+to be OLD. Composed with four existing behaviours:
+
+1. `post_ledger_entry` raises rather than let a user-facing balance go negative (`004`).
+2. Reserving a withdrawal DEBITS `EARNED_REWARD`, taking it to zero (`007`).
+3. `reverse_reward` reverses by DEBITING `EARNED_REWARD` in full (`010`).
+4. No maturity check on settlement (`059`).
+
+So a reversal arriving after the user withdrew **cannot execute at all**:
+
+```
+Day 7    period settled; reward AVAILABLE
+Day 8    user withdraws; EARNED_REWARD debited to 0
+Day 75   advertiser devalidates; CPX re-notifies status=-2
+         -> DEBIT EARNED_REWARD -> would be -NGN 500 -> RAISES -> aborts
+```
+
+`evidence.ts` records `REVERSAL_APPLY_FAILED`, so it is visible - but CPX's dashboard
+shows the clawback **delivered** and the money is gone. No `debt`, `recovery`,
+`overdraft` or `write_off` mechanism exists anywhere in the schema (grepped: zero
+hits), so the loss is permanent, not deferred.
+
+**Why it was invisible.** Every reversal test in the corpus reverses a reward that is
+still `PENDING` and still holding its balance. That is the only case that works, and it
+is the case least likely to occur in production the moment a provider settles on any
+real cadence. CR-0033 verified the gate was *correct* at the moment of release; nothing
+ever checked that the release was still reversible a quarter later.
+
+**Why this is not a "provider problem".** CPX behaved correctly throughout: the
+advertiser devalidated, and CPX notified. The defect is ours - we released money on a
+cycle shorter than the vendor's right to take it back.
+
+**Resolution.** Migration 066 requires `p_period_end <= now() - interval '90 days'`
+before any reward may be released, anchored on `period_end` because that bounds the
+*youngest* conversion in the period. Deliberately not configurable: a tunable window is
+a defect one `UPDATE` from returning. The cost is real and stated plainly - users wait
+~90 days longer to be paid - and it was chosen over paying users and being unable to
+take the money back. See `docs/change-records/CR-0037-settlement-maturity-gate.md`.
+
+**Consequence for go-live.** The first settlement for any new provider is delayed ~90
+days past its first conversion, and any report covering a period that ended less than
+90 days ago is now refused with `period_end is inside the 90-day maturity window`.
+`docs/outreach/cpx-go-live-confirmation.md` has been updated, because its request for
+"our first real settlement report" cannot now be satisfied at go-live.
+
+## Q-61 - `rate_limited` is a declared error code that nothing ever returns
+
+**Found:** 2026-10-10, while answering CPX's partner-review fraud-prevention question.
+
+CPX's integration review asks what fraud controls exist. Answering that question meant
+auditing what is actually enforced rather than what the codebase declares - and the
+first gap was in our own HTTP envelope.
+
+`src/lib/api/errors.ts` declares `rate_limited` in the error-code union and maps it to
+HTTP 429. A repository-wide search finds exactly those two lines. **No route handler
+returns it**, and there is no rate-limiting middleware anywhere in `src/`.
+
+Three separate reasons this is worse than dead code:
+
+1. **It reads as implemented.** A reader of `errors.ts` sees a 429 and concludes there is
+   a limiter. There is not one. This is the doc 71 failure mode applied to our own code -
+   the repository describing a control it does not have.
+2. **`errors.ts` is the single place an operator looks.** It is the natural answer to
+   "what is our rate-limiting posture", and it currently answers wrongly.
+3. **The fraud detectors do not compensate.** `TASK_VELOCITY`,
+   `WITHDRAWAL_VELOCITY`, `DEPOSIT_VELOCITY` and `PROVIDER_CALLBACK_VELOCITY` detect
+   abuse *after the fact*, by counting committed rows in a window. A limiter prevents
+   request volume. Neither substitutes for the other, and describing the detectors as
+   rate limiting would be exactly the overstatement to avoid.
+
+The same audit found a second, related gap: `PROVIDER_CALLBACK_VELOCITY` is seeded into
+`app.risk_detector_config` (migration 029) but has **no implementation** in
+`detect_risk_signals`. The seeded row implies a control that does not run. The other
+five seeded detectors - `DEVICE_CLUSTER`, `TASK_VELOCITY`, `GAME_VELOCITY`,
+`WITHDRAWAL_VELOCITY`, `DEPOSIT_VELOCITY` - were each verified to query a real table.
+
+**Not yet fixed.** Both are recorded here rather than silently patched, because a rate
+limiter is a design decision with real trade-offs (per-route limits, trusted-proxy
+handling for client IPs, whether limits apply per user or per session) and the
+`provider_callback` limit has to be chosen against CPX's legitimate retry behaviour.
+Neither is a one-line change.
+
+**Why it is recorded anyway.** CPX's review is a real audit that will be repeated, and
+the honest answer to "what is your rate-limiting posture" is currently "none". Better to
+know that before the question is asked than to have discovered it then.

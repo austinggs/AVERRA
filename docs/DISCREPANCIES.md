@@ -2467,3 +2467,54 @@ Neither is a one-line change.
 **Why it is recorded anyway.** CPX's review is a real audit that will be repeated, and
 the honest answer to "what is your rate-limiting posture" is currently "none". Better to
 know that before the question is asked than to have discovered it then.
+
+---
+
+## Q-62 - the fraud detectors are granted but never called
+
+Found 2026-10-10 while auditing platform claims for CPX's partner review. Recorded here
+because the review is a real audit and the honest answer to "are your detectors running"
+was currently "no".
+
+**What was claimed.** A draft partner response described "five behavioural detectors -
+device clustering, task velocity, game-action velocity, withdrawal velocity, deposit
+velocity - with tunable thresholds", under a heading about monitoring in place.
+
+**What is true.** `app_private.detect_risk_signals` (migration 029) is well built and
+was verified against real tables. It is also **unreachable from the running
+application**:
+
+- no caller anywhere in `src/` (searched for `detect_risk_signals` and
+  `record_task_signal`);
+- no `public` wrapper, so PostgREST cannot resolve an RPC against an unexposed schema -
+  the same trap as Q-59;
+- granted to `service_role`, which grants a permission, not a caller.
+
+A related gap: **no client collects a device fingerprint at all**, so `hash_observation`
+(a correct SHA-256 path that stores only the digest) currently has no input. "Device
+identifiers are hashed before storage" was therefore true about the hashing and silent
+about the absence of identifiers.
+
+`PROVIDER_CALLBACK_VELOCITY` is the sixth seeded row and, per Q-61, has no
+implementation at all.
+
+**Why this is the same defect as Q-59.** There, `app_private.settle_provider_period` was
+the only path to AVAILABLE and had no reachable entry point, so a PENDING reward had no
+release. Verifying the function's *logic* was sound and said nothing about whether it
+could *run*. Here the logic is sound and nothing invokes it.
+
+The generalisation, and the fourth time this repository has learned it: **a control is
+defined by a reachable call path, not by an accurate function body.** Checking that a
+function queries a real table proves the logic works. It does not prove anything executes.
+
+**Status.** Not fixed. Wiring the detectors means deciding when they run - per request,
+per completed task, or on a schedule - and a scheduled detector needs a worker that does
+not exist yet. That is a design decision, not a one-line change. The partner response was
+corrected to say the detectors exist but are not yet invoked.
+
+**Also fixed here.** `NEXT_PUBLIC_SITE_URL` is now declared in `.env.example` and
+required by `src/lib/env.ts`. The referral page built its share link as
+`${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/sign-up?ref=CODE`, which silently degraded to
+a relative path that does nothing once pasted into a chat app - a referral acquisition
+link that is dead in production and throws no error. Same shape: a missing thing that
+looks fine until someone follows it.

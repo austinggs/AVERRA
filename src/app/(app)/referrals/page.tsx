@@ -1,4 +1,5 @@
 import { requireUser } from '@/lib/auth/session';
+import { getPublicEnv } from '@/lib/env';
 import { getReferralOverview } from '@/lib/referrals/overview';
 import { formatAmount, mapRewardState } from '@/lib/referrals/present';
 import { CopyButton } from '@/components/referrals/CopyButton';
@@ -51,9 +52,15 @@ export default async function ReferralsPage() {
 
   // Doc 39 TRANSPARENCY: the user sees status and reason. Internal risk signals are
   // never shown, and are never queried here.
-  const shareLink = overview.code
-    ? `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/sign-up?ref=${overview.code}`
-    : null;
+  // A share link MUST be absolute. It gets pasted into a chat app, where a relative
+  // `/sign-up?ref=...` resolves against nothing and quietly earns nobody.
+  //
+  // The origin comes from validated env rather than a bare `process.env` read, so a
+  // missing NEXT_PUBLIC_SITE_URL fails loudly here instead of shipping a dead link.
+  // The trailing slash is stripped because the origin may legitimately be declared as
+  // `https://site.ng/`, which would otherwise produce `//sign-up`.
+  const origin = getPublicEnv().NEXT_PUBLIC_SITE_URL.replace(/\/+$/, '');
+  const shareLink = overview.code ? `${origin}/sign-up?ref=${overview.code}` : null;
 
   // Every amount on this page is denominated in the unit the server reported, so a
   // threshold and a reward can never be labelled with different units.

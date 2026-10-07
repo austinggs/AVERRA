@@ -1,198 +1,202 @@
-# CPX partner review — response draft
+﻿# CPX partner review - response draft
 
-**Status:** DRAFT. Not sent. Requires the two placeholders below to be filled by a
-human, and a read-through for accuracy before it leaves the building.
+**Status:** DRAFT. Not sent. Two placeholders remain (S2 timeline, S4 forecast), and a
+human must read the whole thing for accuracy before it leaves the building.
 
 Prepared 2026-10-10 in response to Yvonne (Partner Manager) requesting platform details
-ahead of integration review.
+ahead of integration review. Supersedes the first draft of this file, which contained
+three claims that did not survive verification (see Internal notes).
+
+Reconciles against `cpx-go-live-confirmation.md`, the note sent 2026-10-04, so CPX is
+not left holding two inconsistent versions of our position.
 
 ---
 
-## 1. Website / app URL
-
-`https://vip-averra.vercel.app`
-
-> **Verify before sending.** This is the URL in our existing correspondence footer and
-> in `package.json` metadata. Confirm the production domain is correct and publicly
-> reachable, and whether a custom domain should be given instead.
+## Full reply (send this)
 
 ---
 
-## 2. Planned timeline for launching CPX Research surveys
-
-> **PLACEHOLDER — needs a human decision.** I cannot state a commercial date. Fill in
-> the real target from the product/commercial roadmap before sending.
-
-What can be stated factually about current state:
-
-- The platform is built and the CPX integration is coded, including offer display,
-  click tracking, server-side callback verification, and settlement reconciliation.
-- The CPX provider is promoted to `LIVE` in the database schema, subject to CPX's own
-  commercial approval — which is what this review is gating.
-- Integration testing (live click → callback → reconciliation → settlement) has **not**
-  yet been executed against CPX's production endpoints.
-
-> **Do not commit to a date here.** Per the settlement design (see §3), the *first
-> withdrawal* by a user occurs roughly 90 days after their first tracked conversion.
-> That is a CPX-network consequence, not a delivery delay, and it is worth stating
-> plainly so it is not discovered late by either side.
-
----
-
-## 3. Fraud prevention measures currently in place
-
-This section is written to describe **only what is actually enforced in the running
-system**. Claims were verified against the schema and code, not against intent.
-
-### Callback and attribution integrity
-
-- **Every callback is signature-verified server-side** (`md5(trans_id + secure_hash)`).
-  An unverifiable callback is rejected and recorded as evidence rather than credited.
-- **Tracking IDs are server-minted with 128 bits of CSPRNG entropy** and are prefixed
-  `av_`. A client can never choose or supply its own tracking ID, which prevents
-  forged attribution to a real user.
-- **Callbacks are idempotent.** A unique constraint on `(provider_id, provider_event_id)`
-  means a replayed or duplicated notification collapses onto one conversion and cannot
-  pay twice.
-- **Reversals are append-only.** A CPX clawback (`status=-2`) is recorded as its own
-  conversion row with its own event identity, linked back to the original. Financial
-  history is never edited or deleted, so any dispute is reconstructable.
-
-### Payout gating
-
-- **No reward is withdrawable until it is settlement-matched.** A conversion alone does
-  not create withdrawable funds; a provider settlement report must match our records on
-  **both amount and conversion count**, and only then is the reward released.
-- **A 90-day maturity window applies.** Because an advertiser may devalidate a
-  completion for up to 90 days after it is reported, we refuse to settle any period that
-  ended less than 90 days ago. This protects users and the platform from clawbacks we
-  could not recover.
-- **Earned reward balance and user deposit balance are separate.** A deposit is never
-  treated as an earned reward.
-
-### Account and behaviour monitoring
-
-- **A risk gate sits on the money path.** Any account under a non-`ALLOW` risk decision
-  is blocked from receiving new rewards, and the block is applied *before* any ledger
-  entry is written — a blocked reward leaves no partial financial state.
-- **Five behavioural detectors run against live tables**, with operator-tunable
-  thresholds and weights:
-  - device-fingerprint clustering (multiple accounts per device),
-  - task-attempt velocity,
-  - in-game action velocity,
-  - withdrawal-request velocity,
-  - deposit-request velocity.
-- **Device fingerprints are hashed (SHA-256) before storage**; the raw value is never
-  persisted.
-- **Risk decisions are append-only and attributable**, with mandatory reason codes, and
-  appeals are recorded as new decisions rather than edits.
-
-### What we are deliberately *not* claiming
-
-Listed here because an integration review will test these, and overstating is worse
-than a gap:
-
-- **We do not currently operate an API rate limiter.** A `rate_limited` error type
-  exists in our error envelope but is not yet returned by any handler. Velocity is
-  detected *after the fact* by the detectors above, not prevented at the edge.
-- **Five detectors are implemented; a sixth (`PROVIDER_CALLBACK_VELOCITY`) is
-  configured but not yet implemented** and must not be described as active.
-- **Risk signals are observational.** A tripped signal is recorded and queued for
-  human/policy review; it does not automatically block an account on its own. Blocking
-  requires an explicit, audited decision. This is a deliberate design choice — a
-  detection system must not silently become an enforcement system — but it should be
-  described accurately.
-- **We do not yet have a self-service admin console** for reviewing risk decisions; that
-  review is currently handled operationally.
-
----
-
-## 4. Current or expected daily active users
-
-> **PLACEHOLDER — I do not know this, and it must not be guessed.**
-
-This is a commercial figure with no source in the repository, and an invented number
-would be the single most damaging thing in this reply: it is the easiest claim for CPX
-to verify in an audit and the one that would cost the partnership.
-
-There is no analytics or DAU table in the current schema, so the figure cannot be
-derived from the database either. Please supply:
-
-- **Current DAU**, if the platform has any real users yet, or `0` / "pre-launch, no
-  public users" if it does not.
-- **Expected DAU at CPX survey launch**, and the basis for that expectation (existing
-  audience, acquisition channel, growth target).
-
-Giving CPX an honest "pre-launch, no public users, here is our modelled ramp and its
-basis" is a normal and credible answer for a platform at this stage. Inflating it to
-look attractive is the failure mode to avoid.
-
----
-
-## Suggested full reply
-
----
+**To:** Hello@cpx-research.com
+**Subject:** Averra - partner review answers, and two updates to our last note
 
 Hi Yvonne,
 
-Thanks for the review questions. Here are our details:
+Thanks for the review questions. Answering each below, then flagging two updates to our
+previous message so nothing is out of step.
 
-**1. Website / app URL**
-`https://vip-averra.vercel.app`
-<<CONFIRM DOMAIN BEFORE SENDING>>
+### 1. Website / app URL
 
-**2. Planned timeline**
-<<REAL DATE / MILESTONE>>
-The platform and the CPX integration are built. Live end-to-end integration testing
-against your production endpoints is the next step, pending your approval.
-One thing we want to flag early: because your advertiser validation window runs up to
-90 days, our settlement process holds a period for 90 days before funds are released
-to users. Our first withdrawal therefore occurs roughly 90 days after the first tracked
-conversion. This protects our users from clawbacks, but we want it on the record from
-day one.
+**https://averra.name.ng**
 
-**3. Fraud prevention**
-Happy to walk your team through any of this, and to share our provider integration
-documentation.
+This is now our primary and canonical domain, live and serving the application. Please
+use it for anything you send to users or link to publicly.
 
-- Server-side signature verification on every callback.
-- Server-generated, high-entropy tracking IDs; clients cannot supply their own.
-- Idempotent callback handling — duplicate notifications cannot pay twice.
-- Append-only conversion and reversal records; history is never edited.
-- No reward is withdrawable until it is matched against a provider settlement report on
-  both amount and conversion count, after a 90-day maturity window.
-- A risk gate on the reward path, plus five behavioural fraud detectors (device
-  clustering, task velocity, game-action velocity, withdrawal velocity, deposit
-  velocity) with tunable thresholds.
-- Device identifiers are hashed before storage; raw values are never stored.
-- Risk decisions are append-only, reason-coded, and require human review to enforce.
+Our Vercel deployment (`https://vip-averra.vercel.app`) remains reachable and is the same
+application on the same database, but we would ask that `averra.name.ng` be treated as the
+address of record from here on.
 
-**4. Users**
-<<CURRENT AND EXPECTED DAU, WITH BASIS>>
+Contact addresses, for your records:
 
-Happy to provide any additional technical documentation your review team needs.
+- `admin@averra.name.ng` - please use this for partner and integration correspondence
+- `support@averra.name.ng` - for user support matters
+
+### 2. Planned timeline
+
+<<REAL DATE OR MILESTONE - HUMAN INPUT REQUIRED>>
+
+The platform and the CPX integration are built, including offer display, click
+tracking, server-side callback verification, and settlement reconciliation. CPX is
+configured as a live provider on our side, subject to your commercial approval. Live
+end-to-end testing against your production endpoints is the next step.
+
+One thing we want on the record early rather than discovered late: because your
+advertiser validation window runs up to 90 days, our settlement process holds a period
+for 90 days before funds are released to users. **Our first user withdrawal therefore
+lands roughly 90 days after our first tracked conversion.** That is a property of your
+network, not a delivery delay on our side, but it should be understood before go-live
+rather than after.
+
+### 3. Fraud prevention measures currently in place
+
+We would rather describe than overstate, so this is what is genuinely enforced in the
+running system today.
+
+**Callback and attribution integrity**
+
+- Every callback is signature-verified server-side before anything is credited. An
+  unverifiable callback is recorded as evidence and pays nothing.
+- Tracking IDs are minted server-side with 128 bits of cryptographic randomness. A
+  client can never supply its own, which removes the most obvious forged-attribution
+  path.
+- Callbacks are idempotent. A duplicate or replayed notification collapses onto a single
+  conversion and cannot pay twice.
+- Conversions and reversals are append-only. A `status=-2` clawback is recorded as its
+  own entry linked to the original. Financial history is never edited, so any dispute is
+  reconstructable from our records.
+
+**Payout gating**
+
+- No reward is withdrawable until it matches a settlement report on **both amount and
+  conversion count**. A conversion on its own does not create withdrawable funds.
+- A 90-day maturity window applies, as described in S2.
+- Earned reward balance and user deposit balance are separate domains. A deposit is
+  never treated as an earned reward.
+
+**Account and behaviour monitoring**
+
+- A risk gate sits directly on the reward path. An account under a non-allow risk
+  decision is blocked from receiving rewards *before any credit is written*, so a block
+  leaves no reward, no ledger entry and no budget movement.
+- Five behavioural detectors are built in the database - device clustering, task
+  velocity, game-action velocity, withdrawal velocity and deposit velocity - each
+  querying real transaction tables against configurable thresholds. **These are not yet
+  invoked automatically; we are wiring them into the request path before launch.**
+  Until that is done they inform a manual review rather than enforcing anything alone.
+- Device identifiers, where collected, are stored only as SHA-256 digests. The raw
+  value is not persisted.
+- Risk decisions are append-only and reason-coded. An appeal adds a new linked record;
+  the original decision is never altered.
+
+### 4. Current and expected users
+
+**Current: 0. We are pre-launch.**
+
+The site is a working build, but it has no active users - there is no
+existing audience to report. We would rather tell you that plainly than present a
+projected figure as though it were measured traffic.
+
+Expected DAU and the basis for it: <<HUMAN INPUT REQUIRED - see Internal notes>>
+
+We would rather give you a forecast we can defend, with the reasoning behind it, than a
+number chosen to look attractive. Once we have real traffic we will share actual
+figures rather than projections.
+
+Happy to provide integration documentation, walk your team through the reward path, or
+answer anything the review team needs.
 
 Best regards,
 The Averra team
-https://vip-averra.vercel.app
+https://averra.name.ng
 
 ---
 
 ## Internal notes (do not send)
 
-- Every claim in §3 was verified against `supabase/migrations/` and `src/`, not against
-  project documentation. If any of it is quoted back at us in an audit, it must hold.
-  Specifically confirmed as **enforced code paths**: callback signature check, CSPRNG
-  tracking-id minting, `(provider_id, provider_event_id)` uniqueness, append-only
-  reversals, the settlement gate, `reward_blocked_by_risk` consulted inside
-  `grant_reward`, and the five detectors querying real tables (`task_attempts`,
-  `game_events`, `withdrawal_requests`, `deposit_requests`).
-- **Do not add rate limiting to this reply.** If it is implemented before sending, that
-  is a genuine improvement and can be claimed — but only then.
-- Related: `docs/change-records/CR-0037-settlement-maturity-gate.md` and
-  `docs/DISCREPANCIES.md` Q-60. The 90-day window is still **unapplied** to any
-  database, so it is a design commitment rather than a running control today. It will be
-  applied before CPX traffic goes live. If asked directly, say "enforced in our
-  settlement logic, being rolled out now" rather than implying it is already live.
+### Claims verified against code, not documentation
+
+Each was checked in `supabase/migrations/` and `src/` rather than taken from a design
+document. If any is quoted back in an audit, it must hold.
+
+| Claim | Where it is enforced |
+|---|---|
+| Callback signature verification | `src/lib/providers/adapters/cpx-research.ts` |
+| Entry-link hash differs from inbound hash | `cpxEntrySecureHash`; distinct test at `tests/providers/cpx-research.test.ts:597` |
+| CSPRNG tracking ids | migration 060 |
+| Callback idempotency | unique `(provider_id, provider_event_id)` |
+| Append-only reversals | migrations 057/058, CR-0032 |
+| Settlement match on amount AND count | migration 059, CR-0033 |
+| 90-day maturity gate | migration 066, CR-0037 - **written, not yet applied** |
+| Risk gate inside the money path | `reward_blocked_by_risk` consulted by `grant_reward` (CR-0028) |
+
+### Corrections to the previous draft of this file
+
+The first version would not have survived an audit. Three claims were removed or
+softened, and each is worth remembering:
+
+1. **"Five behavioural detectors with tunable thresholds"** was presented as an active
+   control. It is not one. `app_private.detect_risk_signals` has **no caller anywhere in
+   `src/`** and **no `public` wrapper**, so PostgREST cannot reach it either - the
+   function is unreachable from the running application. It is granted to
+   `service_role`, which grants permission, not a caller. The email now says the
+   detectors exist but are not yet invoked.
+
+   This is the same lesson as Q-59: a control nobody can reach is not a control.
+   Verifying the function queries a real table proved the *logic* sound and said nothing
+   about whether it *runs*.
+
+2. **"Device identifiers are hashed before storage"** was misleading. `hash_observation`
+   does SHA-256 and stores only the digest, which is correct - but **no client collects a
+   device fingerprint at all**, so the hashing path has no input today. The claim now
+   reads "where collected".
+
+3. **`PROVIDER_CALLBACK_VELOCITY` is seeded but unimplemented.** It appears in
+   `app.risk_detector_config` from migration 029, implying a control that does not
+   exist, and is excluded from the detector count.
+
+There is also **no API rate limiter anywhere** (Q-61), so do not claim one. If it is
+built before sending, that becomes a genuine improvement worth adding.
+
+### Domain went live 2026-10-10
+
+`averra.name.ng` now resolves and serves the application (verified by fetching it - it
+returns the real landing page, not a placeholder). S1 and the signature were updated from
+"will move once DNS and TLS are live" to "primary and canonical domain, address of
+record".
+
+Two consequences that are easy to miss now that the domain is real:
+
+1. **`NEXT_PUBLIC_SITE_URL` was absent from `.env.local` and is now required**, so the
+   referrals page would have thrown on first request. It is set to `https://averra.name.ng`
+   locally. **The same variable must be set in the Vercel project's environment
+   variables** or the deployed referrals page throws for real users. A `NEXT_PUBLIC_`
+   value is inlined at build time, so it also needs a rebuild to take effect.
+2. **`metadataBase` was unset**, so Next.js resolved relative canonical/OG URLs against
+   localhost and social previews would have pointed at a dead link. Now set in
+   `src/app/layout.tsx`.
+
+### Still unresolved
+
+- **S2 timeline and S4 forecast** need human input. The forecast must carry its basis -
+  acquisition channel, waitlist, or target market. "Pre-launch, 0 users" is a normal and
+  credible answer at this stage; an unexplained growth number is what loses a review.
+- **The 90-day gate is unapplied** to any database. If asked directly, say "enforced in
+  our settlement logic, being rolled out now" rather than implying it is live. Migration
+  066 must be applied before CPX production traffic.
+
+### Hygiene
+
 - Send from a human, in the founder's voice. Trim to whatever is comfortable defending
-  in a follow-up call; the detail in §3 is more than most reviewers will read.
+  in a follow-up call; most reviewers will not read S3 to the end.
+- Insert the real `app_id` from `publisher.cpx-research.com` if the subject line needs
+  it - it is on the deployment, not necessarily in `.env.local`.
+- **Never include `secure_hash`, any API key, or the database URL** in outbound mail.

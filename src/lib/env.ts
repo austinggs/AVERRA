@@ -20,6 +20,14 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z
     .string()
     .min(1, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set.'),
+  // The absolute origin used to build shareable links (referrals today).
+  //
+  // REQUIRED rather than optional, and that is deliberate. The referral page used to
+  // read this as `process.env.NEXT_PUBLIC_SITE_URL ?? ''`, which silently degraded to a
+  // relative `/sign-up?ref=CODE` when unset - no error, and a link that does nothing
+  // once pasted into a chat app. A missing origin is a broken acquisition path, so it
+  // now fails at first use like every other public value.
+  NEXT_PUBLIC_SITE_URL: z.string().url('NEXT_PUBLIC_SITE_URL is not a valid URL.'),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -28,6 +36,7 @@ function loadPublicEnv(): PublicEnv {
   const parsed = publicEnvSchema.safeParse({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   });
 
   if (!parsed.success) {
@@ -59,5 +68,8 @@ export const publicEnv: PublicEnv = {
   },
   get NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY(): string {
     return getPublicEnv().NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  },
+  get NEXT_PUBLIC_SITE_URL(): string {
+    return getPublicEnv().NEXT_PUBLIC_SITE_URL;
   },
 } as PublicEnv;

@@ -152,10 +152,11 @@ select is(
 -- The conjunction that made this inert before: is_active AND lifecycle_state = LIVE.
 -- Either alone yields nothing, so both are asserted rather than just the visible one.
 select is(
-  (select count(*)::int from public.get_offer_tracking_target(o.id)
+  (select count(*)::int
      from app.offers o
      join app.providers p on p.id = o.provider_id
-    where p.code = 'cpx_research' and o.is_active),
+    where p.code = 'cpx_research' and o.is_active
+      and public.get_offer_tracking_target(o.id) is not null),
   1,
   'get_offer_tracking_target resolves the CPX offer, so the click route can mint a link'
 );
@@ -172,7 +173,7 @@ select is(
 -- secure_hash or subid_1, so any client rendering it produced a click CPX could not
 -- attribute to anyone. The listing must NOT offer one.
 select is(
-  (select count(*)::int from public.list_live_offers() where l ? 'href'),
+  (select count(*)::int from public.list_live_offers() l where l ? 'href'),
   0,
   'no href is returned: a provider link must be minted per user through the click route'
 );

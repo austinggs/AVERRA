@@ -1094,17 +1094,16 @@ replay assertions.
 
 ### Numbers
 
-| Check                                     | Result                             |
-| ----------------------------------------- | ---------------------------------- |
-| Database tests                            | 22 files, 513 checks, all passing  |
-| TypeScript, migrations, source            | unchanged this session             |
-| `AGENTS.md` test count                      | updated 479/21 -> 513/22           |
+| Check                          | Result                            |
+| ------------------------------ | --------------------------------- |
+| Database tests                 | 22 files, 513 checks, all passing |
+| TypeScript, migrations, source | unchanged this session            |
+| `AGENTS.md` test count         | updated 479/21 -> 513/22          |
 
 ### What is left
 
 Unchanged: **CPX confirming `status=1`**, and **CPX's first real settlement
 report**. Both are emails, and both are on the critical path.
-
 
 ---
 
@@ -1125,12 +1124,12 @@ A human-reviewed draft (doc 78: production support comms are never AI-generated;
 says so on its face) asking the three questions that remain before CANDIDATE -> LIVE:
 
 1. **What does `status=1` mean?** The integration note says "1 = completed", the callback
-   docs say `&status=1` is *pending*. We need it in writing that `status=1` +
+   docs say `&status=1` is _pending_. We need it in writing that `status=1` +
    `type=com[plete]` is a completed, payable conversion.
 2. **The first settlement report** - our settlement gate makes rewards withdrawable only
    from a matched report, so the first report closes the loop from day one.
 3. **Offer/survey catalogue delivery** - how CPX's catalogue reaches our Earn section.
-   Their documented `get-surveys` API is *per-user* with a 120-second cache rule, which
+   Their documented `get-surveys` API is _per-user_ with a 120-second cache rule, which
    shapes the loader we still have to build (nothing seeds `app.offers`/`app.surveys`
    today - promotion alone would light up an empty set).
 
@@ -1165,14 +1164,14 @@ Full record in `docs/change-records/CR-0034-responsive-navigation.md`. Summary:
 `tests/ui/navigation.test.tsx` (**13 tests**) and `tests/e2e/smoke.spec.ts`
 (**3 specs x 2 projects**). Remove a gate, see the named test fail:
 
-| Gate removed | Test that fails |
-| --- | --- |
-| seventh core tab added (tap rule breaks again) | `core has exactly six destinations...` |
-| `md:hidden` dropped from BottomNav (desktop footer returns) | `renders the six core tabs... and is hidden from md up` |
-| `md:flex` dropped from TopNav (desktop has no nav) | `is hidden below md and rendered as a Primary landmark...` |
-| disjointness broken (destination in both places) | `the two lists are disjoint...` |
-| dialog semantics or Escape/scroll-lock regress | the three `More` sheet tests |
-| `aria-current` dropped | both `marks the current destination` tests |
+| Gate removed                                                | Test that fails                                            |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| seventh core tab added (tap rule breaks again)              | `core has exactly six destinations...`                     |
+| `md:hidden` dropped from BottomNav (desktop footer returns) | `renders the six core tabs... and is hidden from md up`    |
+| `md:flex` dropped from TopNav (desktop has no nav)          | `is hidden below md and rendered as a Primary landmark...` |
+| disjointness broken (destination in both places)            | `the two lists are disjoint...`                            |
+| dialog semantics or Escape/scroll-lock regress              | the three `More` sheet tests                               |
+| `aria-current` dropped                                      | both `marks the current destination` tests                 |
 
 Playwright had never actually run here (no `tests/e2e/` existed, browsers were not
 installed, `test-results/` was not gitignored). All three are fixed: mobile-chrome
@@ -1180,14 +1179,14 @@ installed, `test-results/` was not gitignored). All three are fixed: mobile-chro
 
 ### Numbers
 
-| Check | Result |
-| --- | --- |
-| Vitest | 22 files, **374** tests, all passing (+13 this session) |
-| Playwright e2e | **6/6** (chromium + mobile-chrome) - first run ever |
-| lint / typecheck | clean |
-| build + `check:bundle` | OK, no secrets in the client bundle |
-| `check:migrations` / `check:grants` / `check:data-api` | OK (0/0/0 errors; no SQL touched) |
-| Database suites | unchanged this session (513/22 from the earlier run) |
+| Check                                                  | Result                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| Vitest                                                 | 22 files, **374** tests, all passing (+13 this session) |
+| Playwright e2e                                         | **6/6** (chromium + mobile-chrome) - first run ever     |
+| lint / typecheck                                       | clean                                                   |
+| build + `check:bundle`                                 | OK, no secrets in the client bundle                     |
+| `check:migrations` / `check:grants` / `check:data-api` | OK (0/0/0 errors; no SQL touched)                       |
+| Database suites                                        | unchanged this session (513/22 from the earlier run)    |
 
 ### What is left
 
@@ -1198,3 +1197,84 @@ inventory loader (nothing seeds `app.offers`/`app.surveys`), then the
 pages at 320/375/768/1280 by a human is still worthwhile - tests prove behaviour and
 routing, not aesthetics.
 
+---
+
+## Session - 2026-10-07 - Provisional provider earnings, and a filter that only fails today
+
+### 1. Provisional provider earnings - CR-0034b
+
+Full record: `docs/change-records/CR-0034b-provisional-provider-earnings.md`.
+
+The gap: CPX is `CANDIDATE`, so a real callback becomes a real `provider_conversions`
+row and can then never become money. The user saw a conversion that silently did
+nothing, and the attribution loop could not be verified end to end.
+
+The fix is a **read-only** projection, `public.get_provisional_earnings`
+(migration 064). No table, no ledger entry, no reward, no payout, no funding source.
+Migrations 015/034/057/059-063 are byte-identical, confirmed by `git diff --stat`.
+
+Deliberate design points:
+
+- Grouped **by currency**, never one combined total. NGN minor units and USD minor
+  units are not the same quantity.
+- Excludes anything a reversal points at, anything already carrying a `reward_id`,
+  and every LIVE provider. Scoped by `lifecycle_state`, so promoting CPX or adding a
+  second CANDIDATE provider needs no code change.
+- Wording is _estimated / pending confirmation_ everywhere. `VALIDATED` means our
+  adapter accepted the callback, **not** that the provider confirmed it is payable.
+  The payload carries no `payable`, `confirmed` or `settled` key, and the suite
+  asserts their absence.
+
+### 2. A filter that is correct in the LIVE case and wrong in ours
+
+The draft excluded reversals with `status <> 'REVERSED'`. That works when the original
+already carries a reward. It does **nothing** when it does not - and for a CANDIDATE
+provider every conversion has `reward_id` null, because `apply_conversion_reward`
+refuses any non-LIVE provider. `apply_provider_reversal` returns early in that case and
+never updates the original's status, so a reversed conversion reads `VALIDATED`
+forever and a CPX clawback would be shown to the user as still-pending earnings.
+
+Fixed by excluding on the `reverses_conversion_id` **link**, which is written before
+the branch is taken. Recorded as Q-47 in `docs/DISCREPANCIES.md`, and added to
+AGENTS.md as a general rule: a predicate on a mutable status is only as good as the
+code that maintains that status, and "no code updates this" is not "this cannot
+happen".
+
+### 3. Two smaller defects worth remembering
+
+- `bigint` arrives from PostgREST as a **string**. The draft branched on
+  `typeof row.gross_minor === 'number'` and fell through to zero for every real row,
+  so the estimate would have rendered as `0` forever with no error anywhere.
+- `serializeWallet` gained the field on `WalletSummary` but not on
+  `WalletSummaryJson`, so the API route returned nothing for it and the page would
+  have shown an empty section.
+
+Both were found by tests written before the behaviour existed, and both were then
+**proven** to fail by re-injecting them (2 and 2 named failures respectively). The
+reversal filter produced 6.
+
+### 4. Tooling notes
+
+- A pgTAP suite must end with `select * from finish();`. A bare `finish()` parses as a
+  column reference and the runner reports it as a suite-level failure.
+- `supabase/tests/*.sql` is not Prettier-managed; `npx prettier` cannot infer a parser.
+- `$Host` is a reserved PowerShell variable and cannot be reassigned.
+- For diagnosis, execute each statement of a suite individually and report which one
+  raised. A whole-suite pass/fail cannot tell you _where_ a splice happened, and an
+  `insert_line` at a stale offset truncated an INSERT in a way no delimiter count
+  detected.
+
+### 5. State
+
+```
+pgTAP     23/23 suites, 546 assertions, 0 failed   (was 22 suites / 513)
+vitest    tests/wallet 11/11
+typecheck 0   lint 0   build 0
+check:migrations 0   check:grants 0   check:data-api 0   check:bundle 0
+```
+
+Migration 064 was applied to the hosted database and the suite re-verified there.
+
+**Still open, unchanged:** the CPX go-live checklist (email sent; waiting on CPX's
+written answer for `status=1`), the offer/survey inventory loader so the Earn tab can
+light up, and a human visual pass at 320/375/768/1280.

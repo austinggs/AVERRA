@@ -2082,3 +2082,58 @@ anywhere is indistinguishable from a wrapper tested elsewhere - both read green.
 trusting a gate, name the test that FAILS when the gate is removed. If no such test
 exists, that absence is the finding.
 
+---
+
+## Q-47 - a status filter silently fails on exactly the provider we are waiting for
+
+**Found** 2026-10-07, while building CR-0034b (provisional provider earnings).
+
+**The defect.** The projection that shows estimated provider earnings was first written
+with `and c.status <> 'REVERSED'` to exclude reversed conversions. That predicate is
+correct for a provider that has ever been LIVE and **wrong for every provider that has
+not**, which right now means CPX Research.
+
+`apply_provider_reversal` (migration 057 line 326) has two paths. When the original
+conversion already carries a reward, it reverses the reward and updates the original's
+status to `REVERSED`. When it does not, it returns early with outcome `no_reward` at
+line 337 and **touches nothing**.
+
+Every CPX conversion has `reward_id` null, because `apply_conversion_reward` refuses any
+provider that is not `LIVE` (migration 015 line 66). So every CPX reversal takes the
+early-return path, and the original conversion keeps reading `VALIDATED` indefinitely.
+
+The practical consequence: CPX re-notifies a conversion with `status=-2` 15-60 days
+later, the clawback is recorded correctly as its own row per CR-0032, and the user still
+sees the original amount listed as _pending estimated earnings_. The system knows the
+money was taken back. The screen says otherwise.
+
+**Why it survived review.** The predicate is the obvious one, it is the one CR-0032's own
+comments would suggest on a quick read, and it is correct in the LIVE case that every
+existing test covers. Nothing about it is locally wrong; it is wrong _conditionally_, on
+the exact path the current provider takes. The unit tests that existed for
+`provider_reversal.sql` asserted the reversal ROW was created - which passed - and never
+asserted what the ORIGINAL still reads afterwards.
+
+**The fix.** Exclude by the link rather than the status:
+
+```sql
+and not exists (
+  select 1 from app.provider_conversions r
+  where r.reverses_conversion_id = c.id
+)
+```
+
+The link is the only signal that survives the early return, because it is written by
+`record_provider_reversal` before the branch is taken.
+
+**The rule.** A predicate can be correct for the data you have and wrong for the data
+you are about to have. When a filter reads a mutable status, ask which code paths leave
+that status untouched, and check the filter against the path that runs _today_. Re-injecting
+the status predicate produced 6 named failures in `supabase/tests/provisional.sql`.
+
+**A second, smaller instance of the same shape.** `serializeWallet` gained a
+`provisionalEarnings` field on `WalletSummary` but not on `WalletSummaryJson`, so the API
+route returned an object with no such key and the page silently showed nothing. TypeScript
+did not catch it because the function's declared return type was satisfied by the fields
+it _did_ set. Adding a field to a read model means adding it to the wire type in the same
+commit; the unit test that asserts the serialised key set is what found it.

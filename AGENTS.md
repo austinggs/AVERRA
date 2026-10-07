@@ -117,10 +117,14 @@ state change. See docs/adr/.
   `expected_*` is computed rather than trusted, and tracking ids are server-minted CSPRNG.
   063 tracking-link issuance: the destination comes from OUR offer row and the wrapper
   refuses any offer whose provider is not LIVE, so issuance is built but inert.
-- `supabase/tests/` - pgTAP suites (513 assertions, 22 files). Executed and green as
-  of CR-0033; run them with `npm run test:db`, which needs no Docker. Earlier they had
+  064 provisional provider earnings: a READ-ONLY projection of estimated earnings from
+  non-LIVE providers. No table, no ledger entry, no reward, no payout. It exists so a
+  CANDIDATE provider's real callbacks are visible without becoming money.
+- `supabase/tests/` - pgTAP suites (546 assertions, 23 files). Executed and green as
+  of CR-0034b; run them with `npm run test:db`, which needs no Docker. Earlier they had
   NEVER run, and every one of them held at least one defect. Each suite declares its OWN
-  `begin;` - the runner does not add one.
+  `begin;` - the runner does not add one. Every suite ends with
+  `select * from finish();`, NOT a bare `finish()`.
 - `tools/run-db-tests.mjs` - the live pgTAP runner. Fails on a suite that produced no
   assertions, and on a plan that does not match the count executed.
 - `src/lib/auth/` - verified session and capability guards. Fail-closed.
@@ -813,3 +817,36 @@ The general rule: a YAML condition that can never be true and one that is not ev
 legal are equally invisible to a green local run. Check workflow expressions against
 the context-availability table, not against intuition. See `docs/DISCREPANCIES.md`
 Q-30.
+
+## A status filter can be correct and still fail on today's data
+
+The single most useful finding of CR-0034b, and the one most likely to be repeated.
+
+`apply_provider_reversal` has two paths. If the original conversion already carries a
+reward, it updates the original's status to `REVERSED`. If it does not, it returns
+early with outcome `no_reward` and **touches nothing**.
+
+Every CPX conversion has `reward_id` null, because `apply_conversion_reward` refuses
+any provider that is not LIVE. So `status <> 'REVERSED'` - the obvious filter, and
+correct in every LIVE-provider case - **excludes nothing at all** for the provider we
+are actually waiting for. A reversed conversion keeps reading `VALIDATED` forever and
+the user is shown a clawback as still-pending earnings.
+
+The reliable signal is the LINK: a conversion that someone else's reversal points at.
+
+Three rules:
+
+1. **Ask which paths leave a status untouched.** A predicate on a mutable column is
+   only as good as the code that maintains that column, and "no code updates this" is
+   not the same as "this cannot happen".
+2. **Prefer the immutable fact over the derived one.** A foreign key written at record
+   time survives every branch. A status is a summary of a path taken.
+3. **Test the filter against the data that exists NOW, not the data the docs
+   describe.** The LIVE-provider case was well covered and passing throughout.
+
+Re-injecting the status predicate produced 6 named failures. See
+`docs/DISCREPANCIES.md` Q-47.
+
+Related and cheap: `bigint` arrives from PostgREST as a **string**, never a number.
+`typeof x === 'number' ? BigInt(x) : 0n` silently yields zero for every real row and
+never throws. Normalise both shapes.

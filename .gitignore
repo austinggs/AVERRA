@@ -43,3 +43,4 @@ supabase/.branches/
 # Playwright artifacts (npm run e2e)
 test-results/
 playwright-report/
+ZONE and LOADER.txt

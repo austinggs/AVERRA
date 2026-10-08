@@ -138,12 +138,75 @@ export function adDeliveryOrigins(
   return [...origins].sort();
 }
 
+/**
+ * A zone identifier is a short opaque token, and it is validated rather than trimmed.
+ *
+ * This is not paranoia about the vendor. The key is interpolated into a DOM element
+ * id (`container-<key>`) and into the `atOptions` object the vendor loader reads, so a
+ * value carrying whitespace, quotes or angle brackets would produce markup that does
+ * not match the id the loader looks for. The failure mode is identical to a typo: the
+ * slot renders empty and nothing is logged anywhere.
+ *
+ * The character class is the intersection of what the four supplied Adsterra zones use
+ * (32-char lowercase hex) and what an id and an object key may safely contain. It is
+ * deliberately wider than hex so a vendor that rotates to another opaque token is not
+ * rejected by our validation.
+ */
+export function isAdZoneKey(value: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
+
 export type AdZoneConfig = {
   /** The zone identifier supplied by the dashboard. */
   key: string;
   /** The exact loader <script src> supplied by the dashboard. */
   scriptSrc: string;
 };
+
+/**
+ * The element id the NATIVE loader looks for.
+ *
+ * The native snippet is a loader script PLUS a container div whose id embeds the zone
+ * key: `<script src=".../<key>"></script><div id="container-<key>"></div>`. The loader
+ * resolves that id to find its mount point.
+ *
+ * This is the reason a native ad can render NOTHING while every screenshot still looks
+ * healthy: omit the id and the loader finds no container, quietly. There is no error,
+ * no console message and no failed request - the page simply has an empty box. It is
+ * the same class of defect as a wrong CSP host, where the failure is absence rather
+ * than an exception, and absence is what gets missed in review.
+ */
+export function adContainerId(key: string): string {
+  return `container-${key}`;
+}
+
+/**
+ * The `atOptions` object the fixed-size loader reads before it does anything else.
+ *
+ * The fixed-size snippet is an inline assignment FOLLOWED BY the loader script:
+ *
+ *     <script>atOptions = { key, format: 'iframe', height, width, params: {} }</script>
+ *     <script src=".../<key>"></script>
+ *
+ * So `format`, `width` and `height` are not decoration - omitting any one of them
+ * leaves the loader with nothing to render into.
+ *
+ * `width`/`height` are passed in rather than looked up from the format because
+ * `delivery.ts` is a LEAF and must not import `placements.ts`, which is the module that
+ * owns the size table. The caller passes `reservedSizeFor(format)`, so the two cannot
+ * disagree.
+ */
+export type AdAtOptions = {
+  key: string;
+  format: 'iframe';
+  width: number;
+  height: number;
+  params: Record<string, never>;
+};
+
+export function buildAdAtOptions(key: string, size: { width: number; height: number }): AdAtOptions {
+  return { key, format: 'iframe', width: size.width, height: size.height, params: {} };
+}
 
 /**
  * The configured zone for a format, or null when it is not fully configured.
@@ -162,6 +225,10 @@ export function readAdZone(
   const scriptSrc = env[vars.script]?.trim();
 
   if (!key || !scriptSrc) return null;
+  // Fails CLOSED. A key that is present but unusable is a misconfiguration, and the
+  // honest response is to render no ad rather than to render one whose container id the
+  // loader cannot match.
+  if (!isAdZoneKey(key)) return null;
   if (!isLoadableScriptUrl(scriptSrc)) return null;
 
   return { key, scriptSrc };
@@ -245,7 +312,20 @@ function applicationOrigins(env: Record<string, string | undefined>): string[] {
  * already carry only the verified ad origins.
  */
 export function buildContentSecurityPolicy(options: CspOptions = {}): string {
-  const env = options.env ?? {};
+  // `readPublicAdEnv()` and NOT `{}`.
+  //
+  // This previously defaulted to `{}`, and `next.config.ts` calls this function with no
+  // `env`. The result was a policy derived from an EMPTY environment: no ad origin ever
+  // reached `script-src`, while the client bundle inlined the real zone URLs. So the page
+  // loaded the ad loader from a host the CSP did not permit.
+  //
+  // Because the CSP ships REPORT-ONLY, nothing blocked and nothing was logged as an
+  // error - the ad simply never rendered, while every screenshot looked healthy. Flip to
+  // enforcement and the same code would have blocked every ad in production. This is the
+  // AGENTS.md rule about a value that is correct in tests and absent in production,
+  // reached from the opposite direction: the tests always passed an explicit `env`, so
+  // the default was never exercised by anything that could have caught it.
+  const env = options.env ?? readPublicAdEnv();
   const reportUri = options.reportUri ?? DEFAULT_CSP_REPORT_URI;
 
   const adOrigins = adDeliveryOrigins(env);

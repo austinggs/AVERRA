@@ -6,9 +6,13 @@ A provider-neutral, revenue-only banner ad subsystem on the landing page `/`, pl
 report-only Content-Security-Policy. Plus one refactor that removes CPX Research's
 field names from shared provider ingestion code.
 
-**No ad renders today.** Every `NEXT_PUBLIC_ADSTERRA_*` variable is unset, so
-`readAdZone` returns null for every format and `AdSlot` emits nothing. That is the
-intended state until an operator pastes real values from the Adsterra dashboard.
+**Ads are LIVE on `/` as of 2026-10-08.** The operator's dashboard values are in
+`.env.local` (untracked). `.env.example` stays blank deliberately - the variables are
+documented there with their meaning, but no zone key or loader URL is committed.
+
+Four zones are configured. **Two placements render on `/`**: the native unit and ONE
+320x50 banner. See "The two vendor shapes" and "`atOptions` is one global" below for
+why the other configured zones are intentionally not placed.
 
 ## The three rules this change is built around
 
@@ -218,3 +222,59 @@ in the TEST rather than the code:
   each is withheld, so adding one means deleting a line that names the consequence.
 - **No second ad vendor.** The modules are provider-neutral; Adsterra appears only in
   env var names and the operator's pasted URL.
+
+## What activation exposed: three defects that only exist with a real key
+
+Every gate was green - 436 tests, typecheck, lint, `check:migrations`, `check:data-api`,
+`check:grants`, `check:bundle`, and a passing `next build` - while the page would have
+rendered **no ads at all**. All three of the following are silent: no failed request, no
+console error, a healthy-looking screenshot. They were found by pasting the real
+dashboard values in and reading the served HTML, not by a test.
+
+### The two vendor shapes are not interchangeable
+
+`AdSlot` emitted only `<script src>` for every format. The dashboard issues two
+different snippets:
+
+- **native** needs a mount point: `<div id="container-<key>">`, derived from the zone key
+- **fixed-size** needs a global `window.atOptions = {...}` assigned BEFORE its loader runs
+
+With only the loader tag, the native unit has nowhere to mount and the fixed banner has
+no key, dimensions or format. Both render nothing.
+
+This is rule 2 from this change record applied one layer down: *a guessed vendor detail
+fails by ABSENCE, not by exception*. It is the same shape as a wrong CSP host.
+
+`buildAdAtOptions` and `adContainerId` are pure and unit tested against the values the
+operator actually supplied. `isAdZoneKey` fails a malformed key **closed**, because the
+key is interpolated into an inline `<script>` and an element id.
+
+### `atOptions` is ONE global, and breakpoints do not serialise it
+
+The table placed 320x50, 300x250 and 728x90 on `/` and relied on a CSS breakpoint
+stagger to keep them apart. **A `hidden` class hides a box; it does not stop
+`afterInteractive` from executing the loader.** All three loaders ran, all three read one
+`window.atOptions`, and the last assignment won - one zone rendered three times at the
+wrong dimensions, with impressions attributed to the wrong zone.
+
+The stagger was never wrong in a way a unit test could see: it is a property of the DOM
+and the vendor's global, not of the placement table. `validatePlacements` now refuses
+more than one fixed-size banner per route, so adding a second is a failed check rather
+than a silent revenue and attribution defect. Its negative case asserts the rule fires.
+
+`native` is exempt: it mounts by element id and never touches `atOptions`.
+
+### The CSP was derived from an EMPTY environment
+
+`buildContentSecurityPolicy` defaulted to `env = {}`, and `next.config.ts` calls it with
+no `env`. The shipped `script-src` was `self unsafe-inline unsafe-eval` with **no ad
+origin at all**, while the client bundle inlined the real loader URLs.
+
+Every pre-existing test passed an explicit `env`, so no test ever exercised the default.
+Report-only CSP cannot enforce, so nothing was blocked and nothing was logged - the ads
+simply never appeared. **Flipping to enforcement would have blocked every ad in
+production.** The default now calls `readPublicAdEnv()`.
+
+The regression test sets the env itself and requires the operator host to appear. It was
+verified by re-injecting `?? {}` and confirming it goes red, per the AGENTS.md rule that
+a gate is unproven until it has been shown to fail on the defect it was written for.

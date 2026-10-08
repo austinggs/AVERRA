@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   AD_FORMATS,
   AD_PLACEMENTS,
+  BANNER_FORMATS,
   EXCLUDED_AD_FORMATS,
+  atOptionsContendersForPath,
   findPlacement,
+  formatUsesAtOptions,
   isAdEligibleRoute,
   isAdFormat,
   isBannerFormat,
@@ -100,12 +103,84 @@ describe('ad placement policy', () => {
     expect(findPlacement('nope')).toBeNull();
   });
 
-  it('stagger breakpoints so one viewport does not stack every format', () => {
-    // A phone rendering all four placements at once is the layout failure the
-    // breakpoint stagger exists to prevent.
-    const atBase = AD_PLACEMENTS.filter((placement) => placement.showFrom === 'base');
-    expect(atBase.length).toBeLessThan(AD_PLACEMENTS.length);
-    expect(atBase.length).toBeGreaterThan(0);
+  it('does not place every available format on one route at one width', () => {
+    // The original intent: a phone must not stack every format at once.
+    //
+    // Restated against FORMATS rather than placement COUNT. The old assertion was
+    // `base < total placements`, which was only ever true while four placements existed
+    // and became vacuous the moment two of them were `base` - it measured the table's
+    // size rather than the layout. Counting distinct FORMATS asks the question that was
+    // actually meant, and it stays meaningful as the table changes.
+    const atBase = new Set(
+      AD_PLACEMENTS.filter((placement) => placement.showFrom === 'base').map((p) => p.format),
+    );
+
+    // Reported WITH its population, so an empty match cannot read as a clean answer.
+    expect(`${AD_FORMATS.length} formats, ${atBase.size} placed at base`).toBe(
+      `${AD_FORMATS.length} formats, 2 placed at base`,
+    );
+    expect(atBase.size).toBeLessThan(AD_FORMATS.length);
+  });
+});
+
+// THE atOptions GLOBAL IS SHARED, AND THREE BANNERS ON ONE PAGE IS A REAL DEFECT
+//
+// These exist because the previous table placed 320x50, 300x250 and 728x90 on `/` and
+// relied on CSS breakpoints to serialise them. Breakpoints cannot do that: a `hidden`
+// class hides a box and does not stop `afterInteractive` from executing the loader. All
+// three loaders then read one `window.atOptions` and the last assignment wins.
+//
+// Per AGENTS.md, the negative case below is what makes the gate trustworthy - a check
+// that has only ever run on valid input proves nothing.
+
+describe('atOptions exclusivity', () => {
+  it('mounts native and exactly one fixed banner on the landing page', () => {
+    // Reported WITH the population, so an empty match cannot read as a clean route.
+    const contenders = atOptionsContendersForPath('/');
+    expect(`${AD_PLACEMENTS.length} placements, ${contenders.length} atOptions contenders`)
+      .toBe(`${AD_PLACEMENTS.length} placements, 1 atOptions contenders`);
+
+    expect(contenders.map((placement) => placement.format)).toEqual(['320x50']);
+  });
+
+  it('exempts native from the shared global', () => {
+    // Native mounts by element id and never writes atOptions, so it coexists safely
+    // with a banner. Asserted so a future change cannot quietly make it contend.
+    expect(formatUsesAtOptions('native')).toBe(false);
+    for (const format of BANNER_FORMATS) {
+      expect(formatUsesAtOptions(format)).toBe(true);
+    }
+  });
+
+  it('reports no contenders for a route carrying no ads', () => {
+    // A predicate that matched nothing must be distinguishable from a clean route.
+    expect(atOptionsContendersForPath('/wallet')).toEqual([]);
+  });
+
+  it('REJECTS two fixed banners on one route', () => {
+    // The defect this whole rule exists for. Fed directly to the validator as a
+    // parameter, which is why `validatePlacements` takes its table as an argument.
+    const problems = validatePlacements([
+      { id: 'a', path: '/', format: '320x50', showFrom: 'base' },
+      { id: 'b', path: '/', format: '728x90', showFrom: 'lg' },
+    ] as AdPlacement[]);
+
+    expect(problems.some((problem) => problem.includes('contend for the single atOptions global')))
+      .toBe(true);
+    // Both ids are named, so the message identifies WHICH placements collide rather
+    // than only asserting that something did.
+    expect(problems.some((problem) => problem.includes('a, b'))).toBe(true);
+  });
+
+  it('allows one banner on each of two different routes', () => {
+    // Guards against an over-broad rule that counts banners GLOBALLY rather than per
+    // route, which would forbid two banners on two different pages.
+    const problems = validatePlacements([
+      { id: 'a', path: '/', format: '320x50', showFrom: 'base' },
+      { id: 'b', path: '/pricing', format: '728x90', showFrom: 'lg' },
+    ] as unknown as AdPlacement[]);
+
+    expect(problems.some((problem) => problem.includes('atOptions global'))).toBe(false);
   });
 });
 

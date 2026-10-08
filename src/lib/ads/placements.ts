@@ -81,6 +81,62 @@ export function isBannerFormat(value: string): value is BannerFormat {
 }
 
 /**
+ * `atOptions` is ONE GLOBAL, and three banners cannot share it.
+ *
+ * THE DEFECT THIS EXISTS TO PREVENT
+ *
+ * The fixed-size loader snippet is:
+ *
+ *     <script>atOptions = { key: ..., width, height, format: 'iframe' }</script>
+ *     <script src="https://<vendor>/22/<key>"></script>
+ *
+ * There is no per-element option. Every banner on the page assigns the SAME
+ * `window.atOptions`, and every loader then reads that one global. So with three
+ * banner placements present:
+ *
+ *   1. native, 320x50, 300x250 and 728x90 ALL render into the DOM on `/`, because a
+ *      CSS `hidden` class hides a BOX and does not stop `afterInteractive` from
+ *      fetching and executing the script;
+ *   2. all three inline scripts assign `window.atOptions` in render order;
+ *   3. the LAST assignment wins, and all three loaders read it.
+ *
+ * The result is not three correct ads. It is one zone rendered three times at the
+ * WRONG dimensions, against a reserved box of a different size, with impressions
+ * attributed to the wrong zone. And it is silent: the scripts load, no request fails,
+ * and every screenshot still looks like a healthy page.
+ *
+ * This is the AGENTS.md rule "a status filter can be correct and still fail on today's
+ * data" applied to rendering. The breakpoint stagger in `AD_PLACEMENTS` was assumed to
+ * serialise the banners. It does not, because visibility and execution are different
+ * things - and that assumption was never wrong in a way a unit test could see, since
+ * it is a property of the DOM and the vendor's global, not of the placement table.
+ *
+ * THE RULE
+ *
+ * At most ONE fixed-size banner may be ACTIVE per page. `native` is exempt: it mounts
+ * by element id and never touches `atOptions`, so it coexists with a banner safely.
+ *
+ * `validatePlacements` enforces this, so adding a second same-route banner is a
+ * FAILED CHECK rather than a silent revenue and attribution defect in production.
+ */
+
+/** True when the format writes to the shared `atOptions` global. */
+export function formatUsesAtOptions(format: AdFormat): boolean {
+  return isBannerFormat(format);
+}
+
+/**
+ * The banner formats approved for a route that would contend for `atOptions`.
+ * Reported WITH its population so an empty result is distinguishable from a clean route.
+ */
+export function atOptionsContendersForPath(pathname: string): AdPlacement[] {
+  return placementsForPath(pathname).filter((placement) => formatUsesAtOptions(placement.format));
+}
+
+/** How many fixed-size banners a route may have active at once. One. */
+export const MAX_ACTIVE_AT_OPTIONS_BANNERS = 1;
+
+/**
  * Intrinsic pixel size per fixed banner format.
  *
  * Used to reserve space before the ad arrives, so the page does not reflow when it
@@ -133,8 +189,20 @@ export type AdPlacement = {
 export const AD_PLACEMENTS: readonly AdPlacement[] = [
   { id: 'home-native', path: '/', format: 'native', showFrom: 'base' },
   { id: 'home-320x50', path: '/', format: '320x50', showFrom: 'base' },
-  { id: 'home-300x250', path: '/', format: '300x250', showFrom: 'md' },
-  { id: 'home-728x90', path: '/', format: '728x90', showFrom: 'lg' },
+  // `300x250` and `728x90` are deliberately NOT placed on `/`.
+  //
+  // All four zones are supplied and all four remain configured in `.env.local`, but a
+  // fixed-size banner mounts through the single `window.atOptions` global, so only one
+  // may be ACTIVE per page. The previous table placed all three and relied on the
+  // breakpoint stagger to serialise them - which it does not, because a CSS `hidden`
+  // class hides a box and does not stop `afterInteractive` from executing the loader.
+  // All three loaders then read whichever assignment ran last.
+  //
+  // `320x50` is the active one: it is the only size that fits every viewport from 320px
+  // up, so one slot serves phones and desktops with no breakpoint logic at all. To switch
+  // the active banner, change THIS line - not the env file, and not the CSP.
+  // `validatePlacements` refuses a second same-route banner, so the swap is a one-line
+  // change that cannot silently reintroduce the collision.
 ] as const;
 
 /**
@@ -210,6 +278,27 @@ export function validatePlacements(placements: readonly AdPlacement[] = AD_PLACE
 
     if ((EXCLUDED_AD_FORMATS as readonly string[]).includes(placement.format)) {
       problems.push(`${label}: format ${placement.format} is explicitly excluded`);
+    }
+  }
+
+  // `atOptions` is a single global, so two banners on one route cannot both be active.
+  // Counted per route, and every route that has any contender is reported, so a table
+  // with zero banners is distinguishable from a table whose predicate matched nothing.
+  const byRoute = new Map<string, AdPlacement[]>();
+  for (const placement of placements) {
+    if (!formatUsesAtOptions(placement.format)) continue;
+    const existing = byRoute.get(placement.path);
+    if (existing) existing.push(placement);
+    else byRoute.set(placement.path, [placement]);
+  }
+
+  for (const [path, contenders] of byRoute) {
+    if (contenders.length > MAX_ACTIVE_AT_OPTIONS_BANNERS) {
+      problems.push(
+        `${path}: ${contenders.length} fixed-size banners (${contenders
+          .map((placement) => placement.id)
+          .join(', ')}) contend for the single atOptions global; at most ${MAX_ACTIVE_AT_OPTIONS_BANNERS} may be active`,
+      );
     }
   }
 

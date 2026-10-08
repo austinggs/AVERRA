@@ -5,6 +5,7 @@ import { errorFields } from '@/lib/observability/errors';
 import {
   canProduceReward,
   type NormalizedCallbackEvent,
+  type ProviderAdapter,
   type ProviderState,
 } from '@/lib/providers/types';
 import { checkTimestamp } from '@/lib/providers/normalize';
@@ -53,24 +54,58 @@ export type IngestInput = {
 /**
  * The provider's own identifier for this event, as claimed in the payload.
  *
- * THE GENERIC `event_id` NAME IS NOT ENOUGH. CPX Research sends its transaction id as
- * `trans_id` and never sends `event_id`, so on the live postback of 2026-10-04 this
- * function returned null for a signature-VERIFIED callback. The vendor's id therefore
- * never reached `provider_callbacks.claimed_event_id`, and reconciling a CPX payout
- * dispute meant digging through `raw_payload` by hand.
+ * THE FIELD NAMES COME FROM THE ADAPTER, NOT FROM HERE.
  *
- * `trans_id` is checked alongside `event_id` because it is a documented CPX postback
- * placeholder, not an invented name. It is recorded as EVIDENCE either way: nothing
- * downstream trusts this value to identify a paying user, and the reward path resolves
- * the user from our own tracking table.
+ * This function used to contain the literal list `['event_id', 'trans_id']`. `trans_id`
+ * is CPX Research's transaction-id placeholder, so one vendor's wire format was
+ * compiled into the shared ingestion path that every provider flows through - the
+ * coupling law 12 exists to prevent. `ingest.ts` is provider-agnostic code and a
+ * vendor-specific string had no business in it.
+ *
+ * WHY IT MATTERED RATHER THAN BEING COSMETIC: on the live postback of 2026-10-04 a
+ * signature-VERIFIED CPX callback produced a null `claimed_event_id`, because CPX never
+ * sends `event_id`. Reconciling a payout dispute then meant hand-searching
+ * `raw_payload`. Nothing threw; the column was simply empty.
+ *
+ * The adapter declares its own aliases via `claimedEventIdFields`. An adapter that
+ * omits it contributes no names, and the column is recorded null - a valid outcome,
+ * because a shared default of `['event_id']` would reintroduce precisely the guess
+ * being removed.
+ *
+ * RECORDED AS EVIDENCE ONLY. Nothing downstream trusts this to identify a paying user;
+ * the reward path resolves identity from our own tracking table (law 5).
  */
-function readClaimedEventId(body: Record<string, unknown>): string | null {
-  for (const field of ['event_id', 'trans_id']) {
+function readClaimedEventId(
+  body: Record<string, unknown>,
+  fields: readonly string[],
+): string | null {
+  for (const field of fields) {
     const value = body[field];
     if (typeof value === 'string' && value.length > 0) return value;
   }
 
   return null;
+}
+
+/**
+ * The field aliases this provider's adapter declares, or an empty list.
+ *
+ * Empty is the honest default for an adapter that does not declare any: it means
+ * "this provider names its event id in a way we have not documented", and the column
+ * is recorded null rather than being populated from a guess that belongs to a
+ * different vendor.
+ *
+ * Wrapped in try/catch because `claimedEventIdFields` is adapter-supplied code and
+ * this runs on the REJECTED path too, where a throw would replace a clean rejection
+ * with a 500 and lose the evidence write. Evidence collection must never fail because
+ * an optional field-naming hint misbehaved.
+ */
+function claimedEventIdFieldsFor(adapter: ProviderAdapter): readonly string[] {
+  try {
+    return adapter.claimedEventIdFields?.() ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function ingestProviderCallback(input: IngestInput): Promise<IngestResult> {
@@ -137,7 +172,7 @@ export async function ingestProviderCallback(input: IngestInput): Promise<Ingest
       verificationResult: verification.result,
       verificationReason: verification.reason ?? null,
       algorithm: verification.algorithm ?? null,
-      claimedEventId: readClaimedEventId(input.parsedBody),
+      claimedEventId: readClaimedEventId(input.parsedBody, claimedEventIdFieldsFor(adapter)),
       claimedTimestamp: verification.claimedTimestamp ?? null,
       correlationId,
     });
@@ -172,7 +207,9 @@ export async function ingestProviderCallback(input: IngestInput): Promise<Ingest
     verificationResult: 'VERIFIED',
     verificationReason: timestampCheck.ok ? null : timestampCheck.reason,
     algorithm: verification.algorithm ?? null,
-    claimedEventId: normalized ? normalized.providerEventId : readClaimedEventId(input.parsedBody),
+    claimedEventId: normalized
+        ? normalized.providerEventId
+        : readClaimedEventId(input.parsedBody, claimedEventIdFieldsFor(adapter)),
     claimedTimestamp: normalized?.eventTimestamp ?? verification.claimedTimestamp ?? null,
     correlationId,
   });

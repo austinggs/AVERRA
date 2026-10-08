@@ -212,6 +212,34 @@ export type ProviderAdapter = Partial<{
   handleCallback(input: RawCallback): Promise<NormalizedCallbackEvent | null>;
 
   /**
+   * Payload keys that may carry this provider's own event identifier, IN PRIORITY
+   * ORDER. The first non-empty string wins.
+   *
+   * WHY THE ADAPTER DECLARES THIS
+   *
+   * `readClaimedEventId` used to live in `ingest.ts` with `['event_id', 'trans_id']
+   * written into it. That put one vendor's field name into the SHARED ingestion path,
+   * which is the coupling law 12 exists to prevent: adding a second vendor meant
+   * editing a file that every vendor flows through, and removing CPX meant finding that
+   * string. Worse, it was silent - the code worked, so nothing failed when the list
+   * drifted from the adapters.
+   *
+   * So the knowledge moves to where it belongs. The adapter knows its own wire format;
+   * shared code knows only that SOME adapter can answer this.
+   *
+   * This is EVIDENCE ONLY. `provider_callbacks.claimed_event_id` is what the provider
+   * asserted about itself; nothing downstream trusts it to identify a paying user. The
+   * reward path resolves identity from our own tracking table (law 5).
+   *
+   * Returning an empty array or omitting the method means "this provider's events
+   * carry no recognizable id", and the column is simply recorded as null. That is a
+   * valid, non-failing outcome - not every vendor names its event id the same way, and
+   * a shared default of `['event_id']` would reintroduce exactly the guess this
+   * replaced.
+   */
+  claimedEventIdFields?: () => readonly string[];
+
+  /**
    * Authenticates a callback. MUST fail closed. An implementation that cannot
    * verify a signature returns 'UNSUPPORTED', never 'VERIFIED'.
    */

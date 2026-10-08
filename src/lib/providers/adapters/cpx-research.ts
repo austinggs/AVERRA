@@ -157,6 +157,16 @@ function asText(value: unknown): string | null {
 
 export function createCpxAdapter(): ProviderAdapter {
   return {
+    /**
+     * CPX's event id is `trans_id`, and it is the ONLY name their postback uses -
+     * they never send `event_id`. This declaration is what records it as evidence on a
+     * verified callback, and it lives HERE rather than in the shared ingestion path so
+     * that `ingest.ts` contains no CPX field names at all.
+     *
+     * Order matters only if a future CPX postback carries both; `trans_id` first
+     * because it is the name CPX actually documents.
+     */
+    claimedEventIdFields: () => [FIELD.transactionId, 'event_id'],
     verifyCallback: async (input: RawCallback): Promise<CallbackVerification> => {
       const secret = secureHash();
 

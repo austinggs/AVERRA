@@ -10,8 +10,30 @@
 // because a proxy match is a navigation convenience rather than an authorization
 // decision (law 3, law 17, doc 71 law 1).
 
-/** Paths that are public in their entirety. */
-const PUBLIC_PATHS = new Set(['/', '/sign-in', '/sign-up', '/auth/callback', '/reviews']);
+/**
+ * Paths that are public in their entirety.
+ *
+ * `/api/csp-report` (CR-0039) belongs here for the same reason the provider callback
+ * does, and the silence when it is missing is worse. A browser posts a CSP violation
+ * report from whichever page triggered it, with NO credentials on a cold visit and
+ * no session cookie on a visit that has not authenticated yet. If this path is not
+ * public, `src/proxy.ts` redirects the report to `/sign-in`, the browser discards an
+ * HTML body where it expected JSON, and the report-only phase collects NOTHING.
+ *
+ * That failure is invisible in the most literal way: there are no violations, the
+ * reports table stays empty, and an empty reports table looks exactly like a site
+ * with no violations. Enabling report-only while quietly blocking reports would
+ * produce a confident "CSP is clean" conclusion drawn from no data at all - the same
+ * "0 bad out of an empty population" shape the leak check had.
+ */
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/sign-in',
+  '/sign-up',
+  '/auth/callback',
+  '/reviews',
+  '/api/csp-report',
+]);
 
 /** Path prefixes that are public below this point. */
 const PUBLIC_PREFIXES = ['/reviews/'];

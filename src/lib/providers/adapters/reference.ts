@@ -69,6 +69,12 @@ export function createReferenceAdapter(secret: string | null): ProviderAdapter {
 
   return {
     /**
+     * The fixture names its own event id `event_id` (see FIELDS above). Declared here
+     * rather than defaulted in the ingestion path so that the shared code has no
+     * opinion about any provider's wire format.
+     */
+    claimedEventIdFields: () => [FIELDS.eventId],
+    /**
      * HMAC-SHA256 over the raw body. This is a REFERENCE scheme chosen because
      * it is standard and testable, NOT because any real provider uses it.
      */

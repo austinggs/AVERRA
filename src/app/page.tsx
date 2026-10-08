@@ -1,9 +1,17 @@
 import Link from 'next/link';
 import { getSessionUser } from '@/lib/auth/session';
 import { Card, Pill } from '@/components/ui/Card';
+import { AdSlot } from '@/components/ads/AdSlot';
+import { placementsForPath } from '@/lib/ads/placements';
 
 export default async function HomePage() {
   const user = await getSessionUser();
+
+  // Ads on the landing page ONLY, and resolved through the placement policy rather
+  // than written out here. `placementsForPath('/')` returns [] on any route that is
+  // not an approved public one, so this line cannot be copied into a sessioned page
+  // without the policy refusing it.
+  const ads = placementsForPath('/');
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -93,6 +101,33 @@ export default async function HomePage() {
             </p>
           </Card>
         </section>
+
+        {/*
+          REVENUE, NOT REWARDS.
+
+          Nothing below this comment can affect a balance, a reward or a withdrawal.
+          Adsterra pays Averra for impressions; it is not a task provider, is not
+          registered in `src/lib/providers/registry.ts`, and has no row in
+          `app.providers`. A visitor completing an ad here has NOT earned anything
+          and no ledger entry is created anywhere on this path.
+
+          The native banner sits between the benefits and the footer because that is
+          the only content boundary here that is not a call to action. The fixed
+          leaderboards follow the copy, where a visitor who has read the page is
+          already committed.
+        */}
+        {ads.length > 0 ? (
+          <section className="mt-12 space-y-8" aria-label="Sponsors">
+            {ads.map((placement) => (
+              <AdSlot
+                key={placement.id}
+                id={placement.id}
+                format={placement.format}
+                showFrom={placement.showFrom}
+              />
+            ))}
+          </section>
+        ) : null}
       </main>
 
       <footer className="border-t border-ink-100 bg-surface">

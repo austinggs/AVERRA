@@ -146,6 +146,11 @@ state change. See docs/adr/.
   and handlers. `payload.ts` is pure and unit tested; the rest are server-only.
 - `src/lib/tasks/` - pure mirrors of the doc 12 verification rules, for honest UI
   copy. It decides nothing; the database is the authority.
+- `src/lib/ads/` - the ad subsystem, and NOTHING in it can touch money.
+  `delivery.ts` is a leaf that must stay one (see below); `placements.ts` owns which
+  routes and formats may carry an ad and delegates the "public" decision to
+  `isPublicPath`. `/api/csp-report` collects report-only violations; it logs and does
+  not store.
 - `src/lib/game/scene.ts` - pure scene model for the Mining Game client: placement,
   visual intent, and the version guard. A WebGL canvas cannot be unit tested, so
   every decision with arithmetic in it lives here instead. `interpolatedEnergy` is
@@ -233,6 +238,49 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   fix below. NOTE: this is the provider activation, not the CR-0036 mining audit in the
   CR-0035 roadmap - two unrelated changes ended up with the same number. The mining
   audit keeps its place in the sequence and remains unstarted.
+- CR-0039 - Adsterra banner subsystem, report-only CSP, and provider-neutral event-id
+  aliases. No ad renders until a zone is configured. See
+  `docs/change-records/CR-0039-adsterra-banners-and-report-only-csp.md` and the four
+  rules below.
+
+## An ad impression is not a conversion, and the CSP derives its own allowlist
+
+CR-0039. Four rules, each learned the expensive way or defended before it could be.
+
+**1. `src/lib/ads/delivery.ts` is a LEAF and must stay one.** It imports nothing.
+`next.config.ts` needs the CSP at build time, Next compiles that config to CJS, and a
+Node `require` cannot resolve an extensionless `.ts` specifier in a nested module. An
+import here fails `next build` with `MODULE_NOT_FOUND` while `tsc`, `eslint` and every
+vitest test pass - all three resolve TypeScript and a compiled CJS config does not. The
+first version of this work imported `config` from `csp` and hit exactly that. Adding an
+import here breaks the build visibly, which is the correct time to find out.
+
+**2. The Adsterra loader URL is operator configuration, and nobody may invent it.** Four
+independent attempts to read a literal loader snippet from Adsterra's documentation
+failed during CR-0039 - JS-rendered pages, a help-centre fetch error, and search-engine
+bot challenges. A guessed host in `script-src` blocks the ad SILENTLY: the slot renders
+empty forever and the page looks healthy in every screenshot. So the operator pastes
+the dashboard values and `adDeliveryOrigins()` derives the policy from them. Never
+hardcode a vendor host, and never hand-maintain the CSP's host list - the day the
+operator pastes a new zone URL, a hand-written list silently stops matching.
+
+**3. An ad is revenue, and it stays outside the money path.** Adsterra has no row in
+`app.providers` and no registry entry. An ad impression is not a conversion and cannot
+become a reward: ad clicks carry no signature and are trivially forged. If someone
+proposes paying users for ad views, that is a different subsystem and needs its own
+design, not a call into this one.
+
+**4. `/api/csp-report` must be public, or report-only silently collects nothing.** The
+same reasoning as the provider callback. A browser posts a violation with no
+credentials; a private path gets redirected to `/sign-in`, the HTML body is discarded,
+and an empty reports stream is indistinguishable from a clean site. Enabling report-only
+while blocking reports produces a confident "CSP is clean" conclusion from no data.
+
+Also: `validatePlacements` takes its table as a PARAMETER so tests can feed it broken
+tables - a validator only ever run on valid input proves nothing. And adapters now
+declare `claimedEventIdFields`, so `ingest.ts` contains no vendor field name at all;
+`tests/providers/provider-neutrality.test.ts` asserts that ABSENCE from source, because a
+behavioural test cannot tell the old shape from the new one.
 
 ## A provider entry link is not a URL
 

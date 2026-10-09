@@ -169,15 +169,40 @@ controls, generous radii, large numerals, mobile-first with bottom tab
 navigation. The layout and composition are our own, not a reproduction.
 
 - **Tokens live in `globals.css`,** as CSS custom properties under `@theme`.
-  There are no hardcoded hex values in components.
+  There are no hardcoded hex values in components - and, since CR-0040, no
+  **vendor palette utilities** either. `bg-danger-100`, not `bg-red-100`; the
+  scales are `danger`, `warning`, `locked`, `brand`, `ink`, `gamify`, `canvas`.
+  This is enforced by a source-reading test, because a behavioural test cannot
+  tell `bg-danger-100` from `bg-red-100`: they render identically. It scanned 99
+  files and found 20 uses across 13, in the auth forms, both wallet forms, both
+  support forms, the review form, the game shell, and three components of the
+  design system itself - so treat that count as the reason the rule exists, not as
+  a hypothetical.
 - **Financial state is never styled by the caller.** Render amounts through
   `MoneyState` or `BalanceCard`, which derive colour and label from the state.
   `settled` is the only state that earns the brand green, so a green number
   always means credited money. Doc 09 TRANSPARENCY lives in this component, not
-  in each page.
+  in each page. **Every state must look different from every other state** -
+  `eligible` and `reserved` once both rendered `warning` and meant opposite
+  things, and a badge is what a user reads before the hint beneath it.
 - **`--color-gamify-*` is reserved for XP, levels, streaks and badges** and must
   never be used for a financial amount, so a virtual reward cannot be mistaken
-  for money (doc 47 SEPARATION).
+  for money (doc 47 SEPARATION). `warning` is orange, not gamify gold, and `Pill`
+  separates them by hue *and* treatment rather than by an alpha step.
+- **A control that changes the URL is a link.** `PillTabs` shipped as a
+  handler-less `<button role="tab">` while the active tab came from
+  `searchParams.tab`; the server chose the tab and the client had no way to change
+  it, so every tab did nothing and looked fine. Tabs carry an `href` per item.
+  They do NOT take an `hrefFor(key)` callback: props crossing from a Server
+  Component to a Client Component must be serialisable, and that shape
+  typechecks perfectly and then throws at runtime.
+- **`event.currentTarget` is the element the listener is bound to, not the
+  element the event came from.** On a delegated handler it is the container, for
+  every event, so it can never identify which item fired. Use `event.target`.
+- **Describe the state, not the hint.** A `hint && !error ? ... : undefined`
+  guard on `aria-describedby` removes the description at exactly the moment it
+  matters, and `role="alert"` alone is not enough: it fires on INSERTION, so a
+  field that is already invalid when focused announces nothing.
 - **A claim is never described as a payment.** Use `describeRewardState` from
   `src/lib/tasks/contract.ts` for task attempt wording.
 - **The Supabase admin client is loosely typed.** A `.select()` naming a column
@@ -242,6 +267,13 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   aliases. No ad renders until a zone is configured. See
   `docs/change-records/CR-0039-adsterra-banners-and-report-only-csp.md` and the four
   rules below.
+- CR-0040 - Design-system defect sweep. `PillTabs` was inert (a tab that changes the
+  URL must be a link), `TextInput` orphaned its error, `.env.example` declared
+  `NEXT_PUBLIC_SITE_URL` twice and the empty copy won, `safeNext` allowed `/\evil.com`,
+  and `warning`/`gamify` plus `eligible`/`reserved` rendered as one badge. Adds the
+  `danger`/`warning`/`locked` scales and a gate that rejects the vendor palette across
+  all 99 component and app files. See
+  `docs/change-records/CR-0040-design-system-defect-sweep.md`.
 
 ## An ad impression is not a conversion, and the CSP derives its own allowlist
 

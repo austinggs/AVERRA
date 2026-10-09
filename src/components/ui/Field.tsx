@@ -28,7 +28,7 @@ export function Field({ id, label, hint, error, children }: FieldProps) {
         </p>
       ) : null}
       {error ? (
-        <p id={`${id}-error`} role="alert" className="mt-1.5 text-xs text-red-700">
+        <p id={`${id}-error`} role="alert" className="mt-1.5 text-xs text-danger-700">
           {error}
         </p>
       ) : null}
@@ -47,9 +47,21 @@ export function TextInput({ id, label, hint, error, className, ...rest }: TextIn
         id={id}
         // The hint id is referenced so assistive technology reads the guidance
         // with the field rather than leaving it as orphaned text.
-        aria-describedby={hint && !error ? `${id}-hint` : undefined}
+        //
+        // Both branches must be described, and only one can exist at a time:
+        // `Field` renders the hint only while there is no error. The previous
+        // `hint && !error ? ... : undefined` resolved the whole attribute to
+        // undefined precisely when an error was showing, so the input stopped
+        // describing anything at the moment the description mattered most.
+        //
+        // `aria-describedby` is also the ONLY durable path to the message.
+        // `role="alert"` on the error paragraph fires on INSERTION, so a field
+        // that is already invalid when it gains focus - a re-render, validation
+        // on blur, a password manager redisplaying the form - announces nothing,
+        // and the text is stranded without this attribute.
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
         aria-invalid={error ? true : undefined}
-        className={cx(INPUT_CLASS, error && 'border-red-300', className)}
+        className={cx(INPUT_CLASS, error && 'border-danger-300', className)}
         {...rest}
       />
     </Field>

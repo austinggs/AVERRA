@@ -2518,3 +2518,119 @@ required by `src/lib/env.ts`. The referral page built its share link as
 a relative path that does nothing once pasted into a chat app - a referral acquisition
 link that is dead in production and throws no error. Same shape: a missing thing that
 looks fine until someone follows it.
+## Q-63 - `.env.example` declared `NEXT_PUBLIC_SITE_URL` twice, and the empty copy won
+
+Found 2026-10-09 while preparing the design-system phase of the paid-perks work.
+
+**What was claimed.** `.env.example` is the template an operator copies to `.env.local`.
+Q-62 fixed a genuinely dead referral link by making `NEXT_PUBLIC_SITE_URL` required, and
+the fix added the variable to `.env.example`.
+
+**What is true.** The variable was added **twice**, four lines apart:
+
+    NEXT_PUBLIC_SITE_URL=https://your-domain.example
+    NEXT_PUBLIC_SITE_URL=
+
+dotenv resolves a duplicate key to the **last** occurrence, so the empty line wins. Every
+operator who copied the template got an empty site URL - which is precisely the failure
+Q-62 had just fixed, reintroduced by the file meant to prevent it. The declaration is the
+one variable in the template whose comment explains that it must not be empty, and it was
+the only one shipped empty.
+
+**Why it survived a real fix.** The Q-62 change was verified against `src/lib/env.ts`,
+which correctly fails loudly on an empty value. That check runs against whatever the
+operator actually has in `.env.local`, so it never inspects the template. The defect is
+in the template, and nothing in the repository reads `.env.example`.
+
+**Status.** Fixed. The duplicate declaration is removed and the reason is recorded inline,
+so the next edit to that line knows why it must stay singular. There is no automated gate:
+nothing parses `.env.example`, the same class of gap as `.github/workflows/` in Q-30.
+
+**Also found in the same file.** `.env.local` carries a `CPX_STATS_API_KEY` that appears
+nowhere in `src/`, nowhere in `tools/`, and nowhere in `.env.example`. It is read by
+nothing, so it is a stored secret with no consumer. Not added to the template: documenting
+a variable that no code reads would make the template lie in the other direction.
+
+## Q-64 - a change record asserted that dark theme tokens exist, and they do not
+
+Found 2026-10-09 while determining how the brand logo should render across themes.
+
+**What was claimed.** `docs/change-records/CR-0004-design-system-ui-refresh.md`, final
+bullet: "The dark theme tokens are defined but not yet wired to a theme switch."
+
+**What is true.** There are no dark theme tokens. Enumerating the population rather than
+grepping a guess at it: `src/` contains exactly **1** CSS file, `globals.css`, which
+contains exactly **1** `@theme` block, and across every `.css`, `.ts` and `.tsx` file in
+`src/` there are **0** matches for `prefers-color-scheme`, `data-theme`, `.dark`,
+`@custom-variant` or `darkMode`.
+
+The claim is wrong in a way that changes the work rather than merely the documentation.
+"Defined but not wired" describes a half-finished job: find the tokens, add a switch. The
+truth is that the entire theme layer must be **written**, including the part the record
+implies already exists. Budgeting Phase 2 as "flip the switch" would have produced a
+half-dark system discovered in the browser.
+
+**Status.** Corrected. Dark theme is built from scratch: switchable colours move out of
+compile-time `@theme` into plain `:root` / `[data-theme]` custom properties remapped via
+`@theme inline`, because a value read from `@theme` at build time cannot be switched at
+runtime. This is recorded as a correction forward rather than an edit to CR-0004, per the
+applied-record rule.
+
+**Scope boundary.** Light/Dark ships as a free accessibility pair following
+`prefers-color-scheme`. It is deliberately **not** the paid theme perk:
+`app.paid_perk_kind` includes `'THEME'` (migration 040), and docs 83 and 84 both treat
+premium themes as monetised. An accessibility light/dark pair is not that perk, and
+multiple decorative themes stay unbuilt and reserved for the entitlement work.
+
+## Q-65 - two distinct financial states render as one indistinguishable badge
+
+Found 2026-10-09 in the design-system component layer, unrelated to the theme work that
+surfaced it.
+
+**What is true.** `PILL_TONE` in `src/components/ui/Card.tsx` defines:
+
+    warning: 'bg-gamify-400/30 text-gamify-600'
+    gamify:  'bg-gamify-400/25 text-gamify-600'
+
+A 30% versus 25% alpha difference on the same hue, with identical text colour. And
+`STYLE` in `src/components/ui/MoneyState.tsx` maps **both `eligible` and `reserved` to
+`pill: 'warning'`**. So "Verified and owed to you, but not yet released" and "Held by an
+in-flight withdrawal" render as the same badge.
+
+This is doc 09 TRANSPARENCY failing in the presentation layer. Those two states are the
+difference between money you are owed and money that is already spoken for, and the user
+cannot tell them apart. The surrounding text hints do differ, so the information is
+present - but a badge is what a user reads first, and the component that exists to make
+financial state unambiguous is the component that flattens it.
+
+**Related.** `gamify` is reserved for XP, levels, streaks and badges per doc 47, and
+`warning` is borrowing it. That also means a non-financial state and a financial one share
+a colour, in the direction doc 47 forbids.
+
+**Also found: the whole system bypassed its own tokens.** Searching for the vendor
+palette rather than for my own token names returned **20 occurrences across 13 files** -
+`bg-red-50`, `text-red-700`, `border-red-200` - in error pages, both auth forms, both
+wallet forms, both support forms, the review form, the game shell, and three components of
+the design system itself. The file documenting "no hardcoded hex values in components" was
+asserted by a gate that passed.
+
+**Status.** Fixed, in three parts.
+
+1. Semantic scales added to `@theme`: `danger` (the only red family), `warning` (orange,
+   hue ~55-68, deliberately set below gamify's gold at ~80-92), and `locked` (cool slate,
+   hue ~250) for money that is real, credited and already claimed by a withdrawal.
+2. `PILL_TONE` now separates by **hue and treatment**, not by a five-point alpha change:
+   `warning` and `locked` carry a ring, `gamify` is a flat tint.
+3. `STYLE.reserved` moved from `warning` to `locked`, so "owed to you" and "already
+   claimed" can no longer share a badge.
+
+All 20 vendor-palette occurrences were replaced with `danger-*` equivalents, 1:1 on the
+shade rather than approximated - `danger-200` and `danger-900` were added to the scale
+specifically so the mapping did not have to round.
+
+**The gate.** `tests/ui/design-tokens.test.tsx` now asserts BOTH rules, and the second
+one reads source, because a behavioural test cannot tell `bg-danger-100` from `bg-red-100`
+- they render identically. Only the absence of a vendor palette from files whose job is to
+use ours is assertable by reading them. It reports its population (`99 scanned, 0 bad`)
+and has a guard test asserting it scanned more than 50 files, so the walk cannot silently
+return nothing and pass vacuously - the Q-22 failure mode.

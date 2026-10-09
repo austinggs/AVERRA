@@ -1,0 +1,137 @@
+# CR-0040 - Design-system defect sweep: inert tabs, orphaned errors, a duplicate env key, and the token layer nobody used
+
+Date: 2026-10-09
+Scope: `src/app`, `src/components/ui`, `src/lib/auth`, `.env.example`, `docs/DISCREPANCIES.md`
+
+## Why this is one change record
+
+Four unrelated-looking defects, found by auditing the paid-perks prerequisites. They
+share a single property: **each one was invisible to every gate in the repository.**
+Typecheck, lint, `check:migrations`, `check:data-api`, `check:grants` and the full
+547-test suite passed before and after. None of them is a crash.
+
+That is the pattern worth recording, not the individual fixes.
+
+## What was broken
+
+### 1. `PillTabs` was completely inert
+
+It rendered `<button role="tab">` with no `onClick`, no `href` and no form, while
+`earn/page.tsx` derived the active tab from `searchParams.tab`. The server decided
+which tab was active and the client had no mechanism to change the URL the server
+reads. **Clicking "Surveys" did nothing at all**, with no error and with the
+appearance of a working tab that simply had no data.
+
+It also had no roving tabIndex, no Arrow/Home/End handling, and `min-h-10` - 40px,
+under the 44px tap rule the design system states for every interactive element.
+
+### 2. `TextInput` orphaned its own error
+
+`aria-describedby={hint && !error ? `${id}-hint` : undefined}` resolves the whole
+attribute to `undefined` precisely when an error is showing. The error paragraph was
+on screen with `role="alert"` and an id, and nothing referenced it.
+
+`role="alert"` fires on **insertion**. A field that is already invalid when it gains
+focus - a re-render, validation on blur, a password manager redisplaying the form -
+announces nothing. `aria-describedby` is the only durable path to the message.
+
+### 3. `.env.example` declared `NEXT_PUBLIC_SITE_URL` twice, and the empty copy won
+
+```diff
+ NEXT_PUBLIC_SITE_URL=https://your-domain.example
+-NEXT_PUBLIC_SITE_URL=
+```
+
+dotenv resolves a duplicate key to the **last** occurrence. Every operator who copied
+the template got an empty site URL - which is exactly the dead referral link Q-62 had
+just fixed, reintroduced by the file meant to prevent it. It is the one variable in the
+template whose comment explains that it must not be empty, and it was the only one
+shipped empty. The defect was in the template, which nothing in the repository reads.
+
+### 4. `safeNext` permitted an open redirect
+
+The callback inlined `next.startsWith('/') && !next.startsWith('//')`. That rejects
+`https://evil.com` and `//evil.com` and passes a review reading for "does it allow //".
+
+It **accepts `/\evil.com`**. Browsers normalise a backslash to a forward slash in the
+authority position, so that string is protocol-relative and leaves the origin. The
+victim arrives on the real domain, completes a real sign-in, and is forwarded to a
+look-alike - the standard phishing primitive.
+
+Compounding it, `sign-in/page.tsx` never read `?error=`, so the callback's
+`/sign-in?error=auth_callback_failed` produced an ordinary sign-in form with no
+explanation. An expired magic link - the most common failure, and the one that looks
+most like our fault - looked like we had simply ignored the user.
+
+### 5. The design system was not being used by the design system
+
+`warning` and `gamify` in `PILL_TONE` were the same colour - `bg-gamify-400` at `/30`
+and `/25`. A five-point alpha difference is not a distinction.
+
+`STYLE` in `MoneyState.tsx` mapped **both `eligible` and `reserved`** to `warning`. So
+"verified and owed to you" and "already claimed by a withdrawal you started" rendered
+as one badge. That is doc 09 TRANSPARENCY failing inside the component written to
+implement it, and it is the direction doc 47 forbids - a financial state sharing a
+colour family with a virtual one.
+
+And the file asserting "no hardcoded hex values in components" was enforced by a gate
+that passed: **20 vendor-palette utilities across 13 files** (`bg-red-50`,
+`text-red-700`, `border-red-200`) in the auth forms, both wallet forms, both support
+forms, the review form, the game shell, and three components of the design system.
+## Three decisions worth defending
+
+**Tabs carry their own `href` rather than taking an `hrefFor(key)` callback.** The
+callback is the obvious API and it would have typechecked perfectly, then thrown at
+runtime: props crossing from a Server Component to a Client Component must be
+serialisable, and `earn/page.tsx` is a Server Component. This is invisible to every
+gate until the page is rendered.
+
+**`PillTabs` is its own file with `'use client'`, not exported from `Button.tsx`.** It
+is the only piece of the segmented control needing a handler. Keeping it beside `Button`
+would have put `'use client'` on `Button` and `ButtonLink` as well, pushing them into
+the client bundle at every call site in the application for one tab group.
+
+**Arrow keys resolve from the focused tab, not from `activeKey`.** `activeKey` is server
+state read from the URL, so between a keypress and the navigation it resolves, it is
+stale. Resolving from it made a second rapid ArrowRight land on the same tab again and
+the key looked unresponsive. The test for this was written before the fix and caught it.
+
+A fourth, found by the test rather than by me: `event.currentTarget` is the element the
+listener is **bound to**, not the element the event came from. On a handler attached to
+the wrapping tablist it is the div for every keypress, so it can never identify which
+tab fired. `event.target` is correct.
+
+## The gates added
+
+| Test | Asserts | Population |
+| --- | --- | --- |
+| `tests/ui/pilltabs.test.tsx` | tabs are links; APG keyboard; 44px | - |
+| `tests/ui/field.test.tsx` | error is reachable via `aria-describedby` | - |
+| `tests/auth/next.test.ts` | 25 rejected redirect shapes | - |
+| `tests/ui/design-tokens.test.tsx` | distinct financial states; no vendor palette | 99 files |
+
+Each was written **before** the fix and run against the broken code first. `pilltabs`
+failed 6 of 12; `field` failed 1 of 7 with the attribute empty; `next` covers a bypass
+that passed the old check; `design-tokens` reported `99 scanned, 14 bad` and named every
+file.
+
+`design-tokens.test.tsx` has a guard test asserting it scanned more than 50 files,
+because a walk that returns nothing makes its assertion pass vacuously - the Q-22
+failure mode, where a predicate matching zero rows was reported as a security assurance.
+
+## Tokens added
+
+`danger` (the only red family; `200` and `900` added so the 1:1 shade mapping did not
+have to round), `warning` (orange, hue ~55-68, held below gamify's gold at ~80-92), and
+`locked` (cool slate, hue ~250) for money that is real, credited and already claimed.
+
+## Explicitly not done here
+
+- **Dark theme.** Q-64 records that CR-0004's claim that dark tokens existed was false;
+  there were none. Building them is its own change, and it is the reason `danger`,
+  `warning` and `locked` were defined as scales first - a dark theme remaps tokens, and
+  it cannot remap `bg-red-50` in thirteen files.
+- **The logo and the duplicated brand markup** (`BrandLockup`). Blocked on the logo
+  source; `AVERRA_LOGO.png` is a 1254x1254 opaque near-black lockup, unusable at 32px.
+- **Decorative `THEME` perks.** Remain entitlement-gated and unbuilt. The Light/Dark
+  accessibility pair is not that perk.

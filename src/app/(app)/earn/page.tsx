@@ -3,7 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { errorFields } from '@/lib/observability/errors';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, EmptyState, Pill } from '@/components/ui/Card';
-import { ButtonLink, PillTabs } from '@/components/ui/Button';
+import { ButtonLink } from '@/components/ui/Button';
+import { PillTabs } from '@/components/ui/PillTabs';
 import { OfferActions } from '@/components/providers/OfferActions';
 
 export const metadata = { title: 'Earn - Averra' };
@@ -29,10 +30,14 @@ export const metadata = { title: 'Earn - Averra' };
 
 type TabKey = 'offers' | 'surveys';
 
+// Each tab carries its own destination. It was previously a bare `<button>` with no
+// handler, which meant the two tabs - which are two URL variants of one page - could
+// not reach each other: `activeTab` came from `searchParams.tab`, and nothing on the
+// client could change that URL. See src/components/ui/PillTabs.tsx.
 const TABS = [
-  { key: 'offers', label: 'Offers' },
-  { key: 'surveys', label: 'Surveys' },
-] as const satisfies ReadonlyArray<{ key: TabKey; label: string }>;
+  { key: 'offers', label: 'Offers', href: '/earn?tab=offers' },
+  { key: 'surveys', label: 'Surveys', href: '/earn?tab=surveys' },
+] as const satisfies ReadonlyArray<{ key: TabKey; label: string; href: string }>;
 
 /**
  * One row for display.
@@ -88,7 +93,7 @@ export default async function EarnPage({
 
       <div className="mt-6">
         <PillTabs
-          items={TABS.map((t) => ({ key: t.key, label: t.label }))}
+          items={TABS}
           activeKey={activeTab}
           ariaLabel="Choose between offers and surveys"
         />
@@ -110,7 +115,11 @@ export default async function EarnPage({
         <ul className="mt-6 space-y-3">
           {items.map((item) => (
             <li key={item.id}>
-              <Card>
+              {/* `interactive`: this card contains the "Start survey" button
+                  below, so a hover lift is a truthful signal that the row is
+                  actionable rather than decoration that lies about where the tap
+                  target actually is. */}
+              <Card interactive>
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-base font-semibold tracking-tight text-ink-900">

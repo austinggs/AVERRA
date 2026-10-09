@@ -144,7 +144,7 @@ export function ReviewForm() {
       </Field>
 
       {error ? (
-        <p role="alert" className="text-xs text-red-700">
+        <p role="alert" className="text-xs text-danger-700">
           {error}
         </p>
       ) : null}

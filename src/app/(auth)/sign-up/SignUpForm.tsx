@@ -121,7 +121,7 @@ function SignUpFormInner() {
       />
 
       {state && !state.ok ? (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="rounded-tile bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {state.error}
         </p>
       ) : null}

@@ -102,11 +102,39 @@ export function NavBadge({ count }: { count: number }) {
   );
 }
 
-const TRIGGER_CLASS =
-  'flex min-h-14 flex-col items-center justify-center gap-0.5 px-2 py-1.5 text-[0.625rem] font-semibold transition-colors';
+/**
+ * The bar's shared item geometry, used by BOTH a tab link and the "More"
+ * trigger.
+ *
+ * One definition rather than two, because the trigger used to carry its own
+ * inline copy of these classes and the two drifted: the trigger was still on
+ * `transition-colors` with no press feedback while the tabs gained it. A "More"
+ * button that behaves differently from every other item in the same bar reads
+ * as a broken control rather than as a special one.
+ *
+ * Two things make the bar feel like a physical control rather than a list of
+ * links:
+ *
+ *   1. `active:scale-95` on press. Without a depress, tapping a bottom tab on a
+ *      phone gives no immediate acknowledgement - the page has not navigated
+ *      yet and nothing has changed, so the tap reads as ignored.
+ *
+ *   2. The transition is scoped to transform, colour and background. A blanket
+ *      `transition-all` animates the width change that happens when the active
+ *      pill gains a background, which smears the bar as you move between tabs.
+ *
+ * `min-h-14` is 56px, comfortably above the 44px tap rule, and the label is
+ * `text-[0.625rem]` because a 10px label is the largest that still fits beside
+ * the icon at a 320px viewport with six tabs.
+ */
+const TAB_ITEM_CLASS =
+  'flex min-h-14 flex-col items-center justify-center gap-0.5 px-2 py-1.5 ' +
+  'text-[0.625rem] font-semibold transition-[transform,color,background-color] ' +
+  'duration-200 ease-[var(--ease-out-expo)] active:scale-95';
 
 const SHEET_LINK_CLASS =
-  'flex min-h-12 items-center gap-3 rounded-tile px-3 text-sm font-medium transition-colors';
+  'flex min-h-12 items-center gap-3 rounded-tile px-3 text-sm font-medium ' +
+  'transition-colors duration-200 active:scale-[0.98]';
 
 interface BottomNavProps {
   /** The six always-visible tabs. */
@@ -187,7 +215,29 @@ export function BottomNav({ core, secondary }: BottomNavProps) {
       // Fixed to the bottom on mobile only. From md up this element is hidden
       // and TopNav in the header carries the same destinations, so there is
       // never a moment with no visible navigation.
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-surface/95 backdrop-blur md:hidden"
+      // FIXED TO THE BOTTOM ON MOBILE ONLY. From `md` up this element is hidden
+      // and TopNav in the sticky header carries the same destinations, so there is
+      // never a moment with no visible navigation.
+      //
+      // THE SAFE-AREA INSET IS THE POINT OF THE PADDING BLOCK.
+      //
+      // `padding-bottom: env(safe-area-inset-bottom)` lifts the bar clear of the
+      // home indicator on an iPhone. Without it the bar sits flush against the
+      // indicator and its lower edge is inside the gesture area - so a tap aimed
+      // at the bottom of "Wallet" is swallowed by the system, and the tap appears
+      // to do nothing. That is not a cosmetic defect on the primary navigation;
+      // it is a control that intermittently fails.
+      //
+      // `max()` is required, not optional: on a device with no inset (every
+      // Android phone, desktop) `env()` resolves to 0px and plain `env()` would
+      // collapse the bar's bottom padding to nothing, making it visibly shorter
+      // than intended on the majority of devices.
+      // `shadow-pop` is the deepest elevation in the scale and belongs to this bar
+      // and the More sheet: both are genuinely floating above page content. A
+      // shadow that is not monotonic becomes decoration, and then nothing reads
+      // as "on top".
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-100 bg-surface/95 shadow-pop backdrop-blur md:hidden"
+      style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
     >
       <ul className="mx-auto flex max-w-lg items-stretch justify-around">
         {core.map((item) => {
@@ -200,7 +250,7 @@ export function BottomNav({ core, secondary }: BottomNavProps) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cx(
-                  TRIGGER_CLASS,
+                  TAB_ITEM_CLASS,
                   'w-full',
                   active ? 'bg-brand-100 text-brand-800' : 'text-ink-500 hover:bg-ink-100',
                 )}
@@ -229,7 +279,7 @@ export function BottomNav({ core, secondary }: BottomNavProps) {
               aria-haspopup="dialog"
               onClick={() => setSheetOpen((open) => !open)}
               className={cx(
-                TRIGGER_CLASS,
+                TAB_ITEM_CLASS,
                 'w-full',
                 secondaryActive || sheetOpen
                   ? 'bg-brand-100 text-brand-800'

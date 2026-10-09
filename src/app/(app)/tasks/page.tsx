@@ -107,7 +107,10 @@ export default async function TasksPage() {
 
             return (
               <li key={task.id}>
-                <Card>
+                {/* `interactive`: this card contains the start/claim controls, so
+                    the hover lift signals an actionable row rather than
+                    decorating a card that does nothing when tapped. */}
+                <Card interactive>
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <h2 className="text-base font-semibold tracking-tight text-ink-900">

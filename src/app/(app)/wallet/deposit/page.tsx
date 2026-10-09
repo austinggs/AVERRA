@@ -28,11 +28,11 @@ export default async function DepositPage() {
       {/* Doc 09 MANDATORY WARNING. Rendered unconditionally and prominently, not
           hidden behind an acknowledgement: sending on the wrong network or with
           the wrong token loses the funds outright. */}
-      <Card className="mt-6 border-red-200 bg-red-50">
-        <p className="text-sm font-semibold text-red-900">
+      <Card className="mt-6 border-danger-200 bg-danger-50">
+        <p className="text-sm font-semibold text-danger-900">
           Unsupported tokens or the wrong network will lead to loss of funds.
         </p>
-        <p className="mt-1.5 text-sm leading-relaxed text-red-800">
+        <p className="mt-1.5 text-sm leading-relaxed text-danger-800">
           Double-check the network is <strong>Celo</strong> and that the token is one of those
           listed below before sending. Native CELO is not accepted. Averra cannot recover funds sent
           to the wrong network or in an unsupported token.

@@ -173,7 +173,7 @@ export function DepositForm({ tokens }: { tokens: Token[] }) {
         </div>
 
         {message ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-sm text-danger-700">
             {message}
           </p>
         ) : null}

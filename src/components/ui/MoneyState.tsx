@@ -9,8 +9,9 @@ import { Card, cx, Pill } from './Card';
 //
 // WHY THIS IS A COMPONENT AND NOT A CLASS
 //
-// It is tempting to let a caller write `<span className="text-green-600">` for
-// an amount. That is exactly how a pending amount ends up looking settled. So
+// It is tempting to let a caller pick a colour directly for an amount - a green
+// utility on a number, say. That is exactly how a pending amount ends up looking
+// settled. So
 // the tone is DERIVED from the state, never passed in, and every state carries
 // an explicit human label.
 //
@@ -38,7 +39,7 @@ interface STATE_STYLE {
   /** Never a brand green. Settled is the only state that earns the brand colour,
    *  so a green number in this system unambiguously means credited money. */
   label: string;
-  pill: 'neutral' | 'brand' | 'warning' | 'danger';
+  pill: 'neutral' | 'brand' | 'warning' | 'danger' | 'locked';
   amount: string;
   hint: string;
 }
@@ -64,7 +65,11 @@ const STYLE: Record<MoneyState, STATE_STYLE> = {
   },
   reserved: {
     label: 'Reserved',
-    pill: 'warning',
+    // NOT `warning`. Both `eligible` and `reserved` carried `pill: 'warning'`, so
+    // "verified and owed to you" and "already claimed by the withdrawal you just
+    // started" drew the same badge. A user reading one could not tell whether the
+    // money was coming to them or leaving them.
+    pill: 'locked',
     amount: 'text-ink-700',
     hint: 'Held by an in-flight withdrawal. It will be deducted on settlement.',
   },

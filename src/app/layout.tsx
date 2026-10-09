@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
+import { ThemeScript } from '@/components/theme/ThemeScript';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
 
 // NEXT_PUBLIC_SITE_URL is read here directly rather than through getPublicEnv(), and the
 // difference matters.
@@ -30,8 +32,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    // `suppressHydrationWarning` and not an accident: the bootstrap script sets
+    // `data-theme` on this element before React exists, so the server HTML and
+    // the client's first render of <html> disagree about it by design. Without
+    // this React logs a hydration mismatch on EVERY page load. The attribute is
+    // applied by the script and reconciled by ThemeProvider, never by a render.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Must be in <head> and must run before the body renders. Moving it into
+          the body produces a flash of the wrong theme on every navigation, which
+          is precisely the defect it exists to prevent.
+        */}
+        <ThemeScript />
+      </head>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

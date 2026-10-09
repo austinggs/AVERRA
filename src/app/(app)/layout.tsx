@@ -5,6 +5,7 @@ import { signOutAction } from '@/app/(auth)/auth-actions';
 import { BottomNav, type TabItem } from '@/components/ui/BottomNav';
 import { TopNav } from '@/components/ui/TopNav';
 import { CORE_TABS, SECONDARY_TABS } from '@/components/ui/navItems';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 // Application shell (doc 09 navigation, doc 51 FRONTEND ARCHITECTURE).
 //
@@ -22,9 +23,7 @@ import { CORE_TABS, SECONDARY_TABS } from '@/components/ui/navItems';
 // cannot drift apart.
 
 function withBadge(tabs: TabItem[], unreadCount: number): TabItem[] {
-  return tabs.map((tab) =>
-    tab.href === '/notifications' ? { ...tab, badge: unreadCount } : tab,
-  );
+  return tabs.map((tab) => (tab.href === '/notifications' ? { ...tab, badge: unreadCount } : tab));
 }
 
 export default async function AppShell({ children }: { children: React.ReactNode }) {
@@ -43,15 +42,7 @@ export default async function AppShell({ children }: { children: React.ReactNode
             Main stays max-w-3xl - content measure and navigation chrome are
             different constraints. */}
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 md:px-6 lg:max-w-7xl">
-          <Link href="/dashboard" className="flex shrink-0 items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="grid size-8 place-items-center rounded-tile bg-brand-500 text-sm font-black text-white"
-            >
-              A
-            </span>
-            <span className="text-base font-bold tracking-tight text-ink-900">Averra</span>
-          </Link>
+          <BrandLockup href="/dashboard" className="shrink-0" />
 
           <TopNav items={[...coreTabs, ...secondaryTabs]} />
 

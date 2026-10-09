@@ -9,6 +9,7 @@ import { FeeCalculator } from '@/components/marketing/FeeCalculator';
 import { HowItWorks } from '@/components/marketing/HowItWorks';
 import { TrustStrip } from '@/components/marketing/TrustStrip';
 import { GUARANTEES } from '@/components/marketing/guarantees';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 // The landing page.
 //
@@ -55,15 +56,7 @@ export default async function HomePage() {
       */}
       <header className="sticky top-0 z-30 border-b border-ink-100 bg-surface/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 md:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="grid size-8 place-items-center rounded-tile bg-brand-500 text-sm font-black text-white"
-            >
-              A
-            </span>
-            <span className="text-base font-bold tracking-tight text-ink-900">Averra</span>
-          </Link>
+          <BrandLockup href="/" />
 
           {/*
             BOTH actions for an anonymous visitor. The old header showed only
@@ -137,8 +130,8 @@ export default async function HomePage() {
                 <Reveal delay={0.1}>
                   <p className="mt-5 max-w-prose text-base leading-relaxed text-ink-500">
                     Averra pays you for completing tasks, offers and surveys. Every reward is
-                    verified before it is credited, every payout is disclosed before you confirm
-                    it, and your earned balance is always separate from anything you deposited.
+                    verified before it is credited, every payout is disclosed before you confirm it,
+                    and your earned balance is always separate from anything you deposited.
                   </p>
                 </Reveal>
 

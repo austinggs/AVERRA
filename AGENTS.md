@@ -157,6 +157,16 @@ state change. See docs/adr/.
   the one place a client clock touches a number, and it is clamped twice.
 - `src/components/ui/` - the design system. `MoneyState` is the one that
   matters; see below.
+- `src/lib/theme.ts` - the Light/Dark/System rules as PURE functions, and the
+  bootstrap script text GENERATED from its constants. It has to be a module and
+  not a component because the script runs before React exists, so the part that
+  decides what a visitor sees on arrival is otherwise untestable.
+- `src/components/theme/` - `ThemeScript` (Server Component, inline `<head>`),
+  `ThemeProvider` (`useSyncExternalStore`, one DOM-writing effect) and
+  `ThemeToggle` (native radios). `useTheme()` degrades to a working no-op when
+  no provider is mounted.
+- `src/components/brand/BrandLockup.tsx` - the mark and wordmark, used by all
+  four call sites. The supplied PNG is not a usable asset; see Q-68.
 - `src/lib/deposits/config.ts` - the ONLY source of the supported-token allowlist.
 - `src/lib/supabase/` - browser, server, proxy and admin (service-role) clients.
 - `docs/adr/` - architecture decisions. `docs/change-records/` - what changed and
@@ -168,16 +178,46 @@ The visual direction came from the shots in `DESIGNS/`: a vivid green, pill
 controls, generous radii, large numerals, mobile-first with bottom tab
 navigation. The layout and composition are our own, not a reproduction.
 
-- **Tokens live in `globals.css`,** as CSS custom properties under `@theme`.
-  There are no hardcoded hex values in components - and, since CR-0040, no
-  **vendor palette utilities** either. `bg-danger-100`, not `bg-red-100`; the
-  scales are `danger`, `warning`, `locked`, `brand`, `ink`, `gamify`, `canvas`.
-  This is enforced by a source-reading test, because a behavioural test cannot
-  tell `bg-danger-100` from `bg-red-100`: they render identically. It scanned 99
-  files and found 20 uses across 13, in the auth forms, both wallet forms, both
-  support forms, the review form, the game shell, and three components of the
-  design system itself - so treat that count as the reason the rule exists, not as
-  a hypothetical.
+- **Tokens live in `globals.css`,** as CSS custom properties. There are no hardcoded
+  hex values in components - and, since CR-0040, no **vendor palette utilities**
+  either. `bg-danger-100`, not `bg-red-100`; the scales are `danger`, `warning`,
+  `locked`, `brand`, `ink`, `gamify`, `canvas`. This is enforced by a source-reading
+  test, because a behavioural test cannot tell `bg-danger-100` from `bg-red-100`:
+  they render identically. It scanned 99 files and found 20 uses across 13, in the
+  auth forms, both wallet forms, both support forms, the review form, the game shell,
+  and three components of the design system itself - so treat that count as the
+  reason the rule exists, not as a hypothetical.
+- **A token is declared in `:root`, not in `@theme`.** The colour layer is split in
+  two on purpose, and the rule that follows from it is the one to remember:
+
+      :root / [data-theme='dark']   raw VALUES, one per scheme
+      @theme inline                 NAMES, mapped to those values
+
+  A value written directly in `@theme` is compiled into the utility, so there is one
+  of it and **no seam to switch at**. Mapped through `@theme inline` it resolves as
+  `var(--ink-900)` at paint time, so one attribute on `<html>` repaints everything.
+  Three consequences, all enforced by `tests/ui/theme.test.ts`:
+
+  1. **`inline` is load-bearing.** Without it the dark scheme is never read - a dark
+     theme that renders identically to light because the layer above resolved too
+     early to see it.
+  2. **Every token needs BOTH schemes and a mapping.** A token with no dark override
+     keeps its light value, so one colour stays stubbornly light in a dark page and
+     reads as a deliberate accent. A token with no mapping compiles to no utility at
+     all: `bg-danger-50` renders nothing, with no error anywhere in the build. These
+     are invisible to a behavioural test, which is why that suite reads the
+     stylesheet and reports its population beside the bad count.
+  3. **Hand-written CSS reads the RAW name**, `var(--ink-900)`, not `var(--color-ink-900)`,
+     which `@theme inline` does not emit.
+
+- **The number in a token name is its JOB, not its shade.** `50`/`100` are background
+  tints, `200`/`300` borders and rings, `400`/`500` the solid accent, `600`/`700`
+  strong text, `800`/`900` high-emphasis. Both schemes read the same way, which is
+  what lets a component write `bg-danger-50 text-danger-700` once. Dark inverts
+  LIGHTNESS, holds HUE, and pulls CHROMA back at both ends - a 0.86-lightness gold at
+  full chroma is a comfortable highlight on white and a vibrating yellow on
+  near-black. Do not pad a scale out to look uniform; each step exists because a
+  component uses it.
 - **Financial state is never styled by the caller.** Render amounts through
   `MoneyState` or `BalanceCard`, which derive colour and label from the state.
   `settled` is the only state that earns the brand green, so a green number
@@ -188,7 +228,7 @@ navigation. The layout and composition are our own, not a reproduction.
 - **`--color-gamify-*` is reserved for XP, levels, streaks and badges** and must
   never be used for a financial amount, so a virtual reward cannot be mistaken
   for money (doc 47 SEPARATION). `warning` is orange, not gamify gold, and `Pill`
-  separates them by hue *and* treatment rather than by an alpha step.
+  separates them by hue _and_ treatment rather than by an alpha step.
 - **A control that changes the URL is a link.** `PillTabs` shipped as a
   handler-less `<button role="tab">` while the active tab came from
   `searchParams.tab`; the server chose the tab and the client had no way to change
@@ -196,6 +236,40 @@ navigation. The layout and composition are our own, not a reproduction.
   They do NOT take an `hrefFor(key)` callback: props crossing from a Server
   Component to a Client Component must be serialisable, and that shape
   typechecks perfectly and then throws at runtime.
+- **A tab that navigates cannot be automatically activated.** Arrow keys move
+  focus for BOTH kinds of tab; only a tab that filters in place also selects.
+  Making that link means activating it is a navigation, and a navigation per
+  arrow press is a server round trip, a scroll reset and a page swap for every
+  arrow the user holds down - which APG names as the case where automatic
+  activation is wrong. `PillTabs` therefore DERIVES the mode from the items
+  (manual if any item has an `href`) and `activation` overrides it. It used to
+  call `onSelect` unconditionally while its comment claimed the panels were
+  cheap URL variants: the earn page passes no `onSelect`, so a link was never
+  activated by an arrow, and the code and the comment disagreed. No `Space`
+  handling either - Space scrolls, and hijacking it inside a group of links
+  breaks scrolling for keyboard users.
+- **The theme preference is an external store, not React state.**
+  `localStorage` and `matchMedia` both live outside React and both change without
+  the tree asking, so `ThemeProvider` reads them with `useSyncExternalStore` and
+  its one effect writes to the DOM. Two defects came from mirroring them into
+  `useState` instead: a cascading render on every mount (rejected by
+  `react-hooks/set-state-in-effect`), and - worse - an OS change at sunset
+  updating the caption under the control while the page stayed light, because
+  the `matchMedia` handler set state and never re-applied `data-theme`.
+  `getSnapshot` must return a STABLE reference while nothing changed, or the
+  hook loops; that is what the module-level cache is for.
+- **The theme is applied before React exists.** `ThemeScript` writes
+  `data-theme` from an inline script in `<head>`, generated from the constants in
+  `src/lib/theme.ts` rather than written twice. A theme set after hydration is a
+  theme the user has already seen, and on a warm cache that is not a flash but
+  the site visibly changing its mind. `<html>` carries
+  `suppressHydrationWarning` for the same reason: the script and the first
+  client render disagree about it by design.
+- **A mutually exclusive choice is a radio group, not three buttons.** The theme
+  control uses native `<input type="radio">`, visually hidden but focusable.
+  Arrow keys, the single tab stop and the "2 of 3" announcement then come from
+  the platform. A hand-rolled `role="radio"` re-implements all three and fails
+  only for keyboard users.
 - **`event.currentTarget` is the element the listener is bound to, not the
   element the event came from.** On a delegated handler it is the container, for
   every event, so it can never identify which item fired. Use `event.target`.
@@ -209,6 +283,15 @@ navigation. The layout and composition are our own, not a reproduction.
   that does not exist will NOT fail typecheck; it fails at runtime. Check the
   migration before selecting a column. `offers` and `surveys` do not share
   column names.
+- **The brand lockup is one component, not four copies.** `AVERRA_LOGO.png` is a
+  presentation mockup: a full lockup on an opaque near-black square, in blue to
+  purple, with no transparent export and no vector. It cannot render at 32px and
+  its gradient contradicts every green token in `globals.css`, so
+  `src/components/brand/BrandLockup.tsx` keeps the token-driven mark the
+  application has always shown and all four call sites use it. **Do not generate a
+  substitute vector** - an invented mark presented as an asset is
+  indistinguishable from a delivered one at review time. See Q-68 for what the
+  designer must supply before this is swapped.
 - Tap targets are at least 44px, focus rings are always visible, and interactive
   elements carry an accessible name.
 
@@ -449,18 +532,18 @@ gate in this system that can be correct at the moment it fires and still lose mo
 
 CR-0033 made money **correct** at release: a MATCHED settlement, exact amount, exact
 count. It never asked whether the release would still be **reversible** a quarter
-later. CPX's publisher terms give the *advertiser* - not CPX - a 60 to 90 day window
+later. CPX's publisher terms give the _advertiser_ - not CPX - a 60 to 90 day window
 to devalidate a completion, and `status=1` only means CPX logged it locally. So the
 clawback can arrive long after the user has the money.
 
 Four existing behaviours compose into a silent permanent loss:
 
-| Fact | Where |
-|------|-------|
+| Fact                                                                  | Where |
+| --------------------------------------------------------------------- | ----- |
 | `post_ledger_entry` raises rather than let a user balance go negative | `004` |
-| Reserving a withdrawal DEBITS `EARNED_REWARD`, taking it to zero | `007` |
-| `reverse_reward` reverses by DEBITING `EARNED_REWARD` in full | `010` |
-| `settle_provider_period` never checked that the period was OLD | `059` |
+| Reserving a withdrawal DEBITS `EARNED_REWARD`, taking it to zero      | `007` |
+| `reverse_reward` reverses by DEBITING `EARNED_REWARD` in full         | `010` |
+| `settle_provider_period` never checked that the period was OLD        | `059` |
 
 ```
 settle day 7 -> withdraw day 8 -> devalidate day 75
@@ -468,7 +551,7 @@ settle day 7 -> withdraw day 8 -> devalidate day 75
 ```
 
 CPX's dashboard shows the clawback delivered. `evidence.ts` records
-`REVERSAL_APPLY_FAILED`, so it is *visible* - and the money is still gone. There is no
+`REVERSAL_APPLY_FAILED`, so it is _visible_ - and the money is still gone. There is no
 `debt`, `recovery`, `overdraft` or `write_off` mechanism anywhere in this schema, so
 the loss is permanent rather than deferred.
 
@@ -480,8 +563,8 @@ Three rules follow, and the first is the one people will try to undo:
    `transition_reward`: no parameter exists that could wave it through, because there
    is no parameter at all.
 2. **Anchor on the period's END, never its start.** `p_period_end` bounds the
-   *youngest* conversion in the period. A period that ended 91 days ago has had 91
-   days of advertiser exposure; one that *started* 91 days ago has not. Anchoring on
+   _youngest_ conversion in the period. A period that ended 91 days ago has had 91
+   days of advertiser exposure; one that _started_ 91 days ago has not. Anchoring on
    the start is the plausible-looking bug.
 3. **Refuse before reconciling, and write nothing.** The check runs before
    `reconcile_provider_period` so a refused report creates no settlement row, no audit

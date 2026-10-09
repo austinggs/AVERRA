@@ -4,7 +4,7 @@ import { errorFields } from '@/lib/observability/errors';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, EmptyState, Pill } from '@/components/ui/Card';
 import { ButtonLink } from '@/components/ui/Button';
-import { PillTabs } from '@/components/ui/PillTabs';
+import { PillTabs, pillTabId, pillTabPanelId } from '@/components/ui/PillTabs';
 import { OfferActions } from '@/components/providers/OfferActions';
 
 export const metadata = { title: 'Earn - Averra' };
@@ -40,6 +40,16 @@ const TABS = [
 ] as const satisfies ReadonlyArray<{ key: TabKey; label: string; href: string }>;
 
 /**
+ * Namespace for the tab/panel id pair.
+ *
+ * One constant, passed to `PillTabs` as `idPrefix` and to `pillTabId` /
+ * `pillTabPanelId` below, because the tabs and the panel are rendered by different
+ * elements in this file and an `aria-controls` that points at a renamed id is a
+ * silently broken relationship - it renders perfectly and announces nothing.
+ */
+const PANEL_PREFIX = 'earn';
+
+/**
  * One row for display.
  *
  * Offers and surveys do NOT share column names. `offers` has `category`,
@@ -69,9 +79,9 @@ export default async function EarnPage({
   const admin = createAdminClient();
 
   // Routed through public.list_live_offers / public.list_live_surveys, NOT
-  // .from('offers'). The pp schema is not exposed through the Data API.
+  // .from('offers'). The app schema is not exposed through the Data API.
   //
-  // The wrappers already join pp.providers and filter on lifecycle_state =
+  // The wrappers already join app.providers and filter on lifecycle_state =
   // 'LIVE' in the database, so a CANDIDATE provider's inventory cannot surface
   // even if this page were modified.
   const rpc = activeTab === 'offers' ? 'list_live_offers' : 'list_live_surveys';
@@ -96,58 +106,81 @@ export default async function EarnPage({
           items={TABS}
           activeKey={activeTab}
           ariaLabel="Choose between offers and surveys"
+          idPrefix={PANEL_PREFIX}
         />
       </div>
 
-      {items.length === 0 ? (
-        <div className="mt-6">
-          <EmptyState
-            title={activeTab === 'offers' ? 'No offers available yet' : 'No surveys available yet'}
-            description="Averra has not yet enabled any live partner inventory. Offers and surveys appear here once a provider completes commercial approval and compliance review. Native tasks are available now."
-            action={
-              <ButtonLink href="/tasks" size="sm">
-                Browse native tasks
-              </ButtonLink>
-            }
-          />
-        </div>
-      ) : (
-        <ul className="mt-6 space-y-3">
-          {items.map((item) => (
-            <li key={item.id}>
-              {/* `interactive`: this card contains the "Start survey" button
+      {/*
+        THE PANEL, AND WHY IT IS WIRED BOTH WAYS.
+
+        `aria-controls` on the tab names this element, and `aria-labelledby` names
+        the tab back. One direction is enough for a screen reader to follow, but
+        the reverse link is what makes the panel announce WHICH tab it belongs to,
+        and both ids come from the same exported helpers as the tabs so the two
+        files cannot drift apart.
+
+        No `tabIndex={0}` here. APG asks for it only when the panel contains no
+        focusable elements, and this one always does - the empty state renders a
+        link and every row renders a "Start survey" button. Adding it anyway would
+        put a blank stop in the tab order immediately after the tablist, which is
+        the classic "why does Tab land on nothing" bug.
+      */}
+      <div
+        role="tabpanel"
+        id={pillTabPanelId(PANEL_PREFIX, activeTab)}
+        aria-labelledby={pillTabId(PANEL_PREFIX, activeTab)}
+      >
+        {items.length === 0 ? (
+          <div className="mt-6">
+            <EmptyState
+              title={
+                activeTab === 'offers' ? 'No offers available yet' : 'No surveys available yet'
+              }
+              description="Averra has not yet enabled any live partner inventory. Offers and surveys appear here once a provider completes commercial approval and compliance review. Native tasks are available now."
+              action={
+                <ButtonLink href="/tasks" size="sm">
+                  Browse native tasks
+                </ButtonLink>
+              }
+            />
+          </div>
+        ) : (
+          <ul className="mt-6 space-y-3">
+            {items.map((item) => (
+              <li key={item.id}>
+                {/* `interactive`: this card contains the "Start survey" button
                   below, so a hover lift is a truthful signal that the row is
                   actionable rather than decoration that lies about where the tap
                   target actually is. */}
-              <Card interactive>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h2 className="text-base font-semibold tracking-tight text-ink-900">
-                      {item.title}
-                    </h2>
-                    {item.description ? (
-                      <p className="mt-1 text-sm leading-relaxed text-ink-500">
-                        {item.description}
+                <Card interactive>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-base font-semibold tracking-tight text-ink-900">
+                        {item.title}
+                      </h2>
+                      {item.description ? (
+                        <p className="mt-1 text-sm leading-relaxed text-ink-500">
+                          {item.description}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {item.payout ? (
+                      <p className="shrink-0 text-right">
+                        <span className="block text-lg font-bold tabular-nums tracking-tight text-ink-900">
+                          {item.payout}
+                        </span>
+                        <span className="text-xs text-ink-500">{item.payoutUnit}</span>
                       </p>
                     ) : null}
                   </div>
 
-                  {item.payout ? (
-                    <p className="shrink-0 text-right">
-                      <span className="block text-lg font-bold tabular-nums tracking-tight text-ink-900">
-                        {item.payout}
-                      </span>
-                      <span className="text-xs text-ink-500">{item.payoutUnit}</span>
-                    </p>
-                  ) : null}
-                </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Pill tone="warning">Estimate, not a credit</Pill>
+                    {item.tag ? <Pill>{item.tag}</Pill> : null}
+                  </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Pill tone="warning">Estimate, not a credit</Pill>
-                  {item.tag ? <Pill>{item.tag}</Pill> : null}
-                </div>
-
-                {/*
+                  {/*
                   A BUTTON, NOT AN ANCHOR. The listing wrapper no longer returns an href:
                   a raw `tracking_base_url` carries no app_id, ext_user_id or subid_1,
                   so following it directly sent the user to CPX with nothing
@@ -155,14 +188,15 @@ export default async function EarnPage({
                   Opening an offer goes through the click route, which mints the
                   tracking identity server-side from the verified session.
                 */}
-                <div className="mt-4">
-                  <OfferActions offerId={item.id} />
-                </div>
-              </Card>
-            </li>
-          ))}
-        </ul>
-      )}
+                  <div className="mt-4">
+                    <OfferActions offerId={item.id} />
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

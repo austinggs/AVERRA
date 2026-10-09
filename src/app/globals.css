@@ -13,85 +13,233 @@
    so "pending" can never be styled to look like "settled".
    =========================================================================== */
 
-@theme {
+/* ===========================================================================
+   HOW THEMING WORKS HERE, AND WHY IT IS BUILT THIS WAY
+
+   A colour lives in TWO places, and which one a rule reads decides whether it
+   can change with the theme:
+
+     :root / [data-theme='dark']   raw VALUES, one per scheme
+     @theme inline                 NAMES, mapped to those values
+
+   `@theme` alone cannot do this. A value declared there is compiled into the
+   utility, so there is exactly one of it and no seam to switch at. Declaring the
+   value in `:root` and mapping it through `@theme inline` makes every utility
+   resolve `var(--ink-900)` AT RUNTIME, so flipping one attribute on <html>
+   repaints the entire application with no rebuild and no per-component edit.
+
+   THE NUMBER IN A TOKEN NAME IS ITS JOB, NOT ITS SHADE.
+   ---------------------------------------------------------------------------
+   Every scale below is read the same way in both schemes:
+
+     50 / 100    a background TINT behind text  (banners, Pill fills)
+     200 / 300   a BORDER or a ring
+     400 / 500   the SOLID accent
+     600 / 700   strong text
+     800 / 900   high-emphasis text
+
+   So dark mode inverts LIGHTNESS and holds HUE. `danger-50` is a pale pink wash
+   in light and a deep oxblood wash in dark, but in both it is "the background
+   behind danger text" - which is what lets a component write `bg-danger-50
+   text-danger-700` once and be correct in both schemes. Components never name a
+   scheme; that is the entire point of the layer CR-0040 spent itself creating.
+   =========================================================================== */
+
+/* LIGHT: the default, and the fallback whenever JavaScript never runs. */
+:root {
+  /* Declares to the BROWSER, not to us: form controls, scrollbars, the default
+     canvas and the overscroll area all pick their rendering from this. Without
+     it a dark page still ships a white scrollbar and white date pickers, which is
+     the single most common way a dark theme gives itself away. */
+  color-scheme: light;
   /* Brand. A vivid, confident green. Enough contrast against white for text
      at large sizes and for icon fills; never used as body text on white. */
-  --color-brand-50: oklch(0.97 0.03 150);
-  --color-brand-100: oklch(0.94 0.07 150);
-  --color-brand-200: oklch(0.88 0.13 150);
-  --color-brand-300: oklch(0.8 0.17 150);
-  --color-brand-400: oklch(0.71 0.19 150);
-  --color-brand-500: oklch(0.63 0.19 150);
-  --color-brand-600: oklch(0.53 0.16 150);
-  --color-brand-700: oklch(0.44 0.13 150);
-  --color-brand-800: oklch(0.36 0.1 150);
-  --color-brand-900: oklch(0.29 0.08 150);
+  --brand-50: oklch(0.97 0.03 150);
+  --brand-100: oklch(0.94 0.07 150);
+  --brand-200: oklch(0.88 0.13 150);
+  --brand-300: oklch(0.8 0.17 150);
+  --brand-400: oklch(0.71 0.19 150);
+  --brand-500: oklch(0.63 0.19 150);
+  --brand-600: oklch(0.53 0.16 150);
+  --brand-700: oklch(0.44 0.13 150);
+  --brand-800: oklch(0.36 0.1 150);
+  --brand-900: oklch(0.29 0.08 150);
 
   /* Warm surface tint, used behind cards the way the references do. */
-  --color-canvas: oklch(0.98 0.012 150);
-  --color-surface: oklch(1 0 0);
-  --color-surface-sunken: oklch(0.965 0.008 150);
+  --canvas: oklch(0.98 0.012 150);
+  --surface: oklch(1 0 0);
+  --surface-sunken: oklch(0.965 0.008 150);
 
   /* Ink. Warm-tinted rather than pure slate, so it sits with the green. */
-  --color-ink-900: oklch(0.21 0.015 160);
-  --color-ink-700: oklch(0.36 0.015 160);
-  --color-ink-500: oklch(0.52 0.015 160);
-  --color-ink-400: oklch(0.63 0.012 160);
-  --color-ink-200: oklch(0.9 0.008 160);
-  --color-ink-100: oklch(0.95 0.006 160);
+  --ink-900: oklch(0.21 0.015 160);
+  --ink-700: oklch(0.36 0.015 160);
+  --ink-500: oklch(0.52 0.015 160);
+  --ink-400: oklch(0.63 0.012 160);
+  --ink-200: oklch(0.9 0.008 160);
+  --ink-100: oklch(0.95 0.006 160);
 
   /* Gamification accent. Reserved for XP, levels, streaks and badges ONLY.
      Never used for a financial amount, so a virtual reward can never be
      mistaken for money (doc 47 SEPARATION). */
-  --color-gamify-400: oklch(0.86 0.16 92);
-  --color-gamify-500: oklch(0.79 0.16 86);
-  --color-gamify-600: oklch(0.7 0.15 80);
+  --gamify-400: oklch(0.86 0.16 92);
+  --gamify-500: oklch(0.79 0.16 86);
+  --gamify-600: oklch(0.7 0.15 80);
+}
 
-  /* ---------------------------------------------------------------------
-     SEMANTIC SCALES: danger, warning, locked.
+/* DARK.
+   Not an inversion, a re-tinting: lightness flips, hue is held, and CHROMA IS
+   PULLED BACK at both ends.
 
-     These existed as raw `red-*` / `amber-*` utilities in fifteen components
-     before they were defined here, which is the exact inversion of the rule
-     above the tokens: the design system declared a palette and the components
-     picked from a vendor's. That is how a dark theme would have had to be
-     applied to twenty call sites individually, and how the two distinct
-     financial states "eligible" and "reserved" came to share one badge.
+   That last part is easy to skip and is what separates "designed" from "a
+   filter was applied". A 0.86-lightness gold at full chroma is a comfortable
+   highlight on white and a vibrating yellow on near-black - the same number,
+   reading far brighter against a dark ground. So `gamify-400` goes from
+   0.86/0.16 to 0.44/0.095: same hue, about a third of the energy, because it
+   still carries the same JOB (a tint behind XP text) at a very different
+   contrast ratio.
 
-     THE THREE ARE HELD APART BY HUE, NOT JUST BY SHADE.
-     --------------------------------------------------------------------- */
+   `--brand-500` is deliberately NOT re-tinted. The vivid green IS the brand,
+   and a brand that changes colour when the OS does is not a brand. Q-67 records
+   the one genuine tension this leaves, which is white text sitting on it. */
+[data-theme='dark'] {
+  color-scheme: dark;
 
+  --brand-50: oklch(0.24 0.035 155);
+  --brand-100: oklch(0.29 0.055 153);
+  --brand-200: oklch(0.37 0.075 152);
+  --brand-300: oklch(0.45 0.105 151);
+  --brand-400: oklch(0.72 0.17 150);
+  --brand-500: oklch(0.63 0.19 150);
+  --brand-600: oklch(0.58 0.16 150);
+  --brand-700: oklch(0.8 0.115 148);
+  --brand-800: oklch(0.87 0.09 147);
+  --brand-900: oklch(0.93 0.06 146);
+
+  --canvas: oklch(0.17 0.008 160);
+  --surface: oklch(0.215 0.009 160);
+  --surface-sunken: oklch(0.19 0.008 160);
+
+  --ink-900: oklch(0.96 0.005 160);
+  --ink-700: oklch(0.86 0.008 160);
+  --ink-500: oklch(0.71 0.01 160);
+  --ink-400: oklch(0.59 0.01 160);
+  --ink-200: oklch(0.33 0.008 160);
+  --ink-100: oklch(0.26 0.008 160);
+
+  --gamify-400: oklch(0.44 0.095 88);
+  --gamify-500: oklch(0.72 0.14 86);
+  --gamify-600: oklch(0.85 0.12 84);
+}
+
+/* -----------------------------------------------------------------------
+   SEMANTIC SCALES: danger, warning, locked.
+
+   These existed as raw `red-*` / `amber-*` utilities in fifteen components
+   before they were defined here, which is the exact inversion of the rule
+   above the tokens: the design system declared a palette and the components
+   picked from a vendor's. That is how a dark theme would have had to be
+   applied to twenty call sites individually, and how the two distinct
+   financial states "eligible" and "reserved" came to share one badge.
+
+   THE THREE ARE HELD APART BY HUE, NOT JUST BY SHADE.
+
+   The steps are deliberately FEWER than a full Tailwind scale, and they are not
+   padded out to look uniform. Each one here exists because a component uses it;
+   `locked` has three steps because `Pill` needs a fill, a ring and a text
+   colour and nothing else. Adding unused steps to make the columns line up is
+   how a palette grows a colour nobody chose.
+   ----------------------------------------------------------------------- */
+:root {
   /* Danger. Errors, invalid input, destructive actions. The only red family
      in the system, so "this is broken" has exactly one appearance. */
-  --color-danger-50: oklch(0.97 0.021 27);
-  --color-danger-100: oklch(0.94 0.042 27);
-  --color-danger-200: oklch(0.89 0.075 27);
-  --color-danger-300: oklch(0.79 0.13 27);
-  --color-danger-500: oklch(0.6 0.21 27);
-  --color-danger-600: oklch(0.52 0.2 27);
-  --color-danger-700: oklch(0.44 0.17 27);
-  --color-danger-800: oklch(0.37 0.14 27);
-  --color-danger-900: oklch(0.29 0.1 27);
+  --danger-50: oklch(0.97 0.021 27);
+  --danger-100: oklch(0.94 0.042 27);
+  --danger-200: oklch(0.89 0.075 27);
+  --danger-300: oklch(0.79 0.13 27);
+  --danger-500: oklch(0.6 0.21 27);
+  --danger-600: oklch(0.52 0.2 27);
+  --danger-700: oklch(0.44 0.17 27);
+  --danger-800: oklch(0.37 0.14 27);
+  --danger-900: oklch(0.29 0.1 27);
 
-  /* Warning. Attention on a real thing. ORANGE (hue ~55-68), set deliberately
+  /* Warning. Attention on a real thing. ORANGE (hue ~52-68), set deliberately
      below gamify's gold (hue ~80-92) because `warning` used to BE gamify: it
      was `bg-gamify-400/30` against gamify's `/25`, a five-point alpha
      difference on an identical hue. Two financial states that mean opposite
      things - money you are owed versus money an in-flight withdrawal has
      claimed - rendered in the same badge. */
-  --color-warning-50: oklch(0.97 0.028 68);
-  --color-warning-100: oklch(0.94 0.06 68);
-  --color-warning-300: oklch(0.82 0.135 65);
-  --color-warning-500: oklch(0.65 0.17 58);
-  --color-warning-600: oklch(0.55 0.15 55);
-  --color-warning-700: oklch(0.45 0.12 52);
+  --warning-50: oklch(0.97 0.028 68);
+  --warning-100: oklch(0.94 0.06 68);
+  --warning-300: oklch(0.82 0.135 65);
+  --warning-500: oklch(0.65 0.17 58);
+  --warning-600: oklch(0.55 0.15 55);
+  --warning-700: oklch(0.45 0.12 52);
 
   /* Locked. Money that is real, credited, and already spoken for by an
      in-flight withdrawal. Cool slate, so it is unmistakably neither the amber
      of `warning` nor the gold of `gamify`. */
-  --color-locked-100: oklch(0.94 0.02 250);
-  --color-locked-300: oklch(0.82 0.05 250);
-  --color-locked-700: oklch(0.44 0.08 250);
+  --locked-100: oklch(0.94 0.02 250);
+  --locked-300: oklch(0.82 0.05 250);
+  --locked-700: oklch(0.44 0.08 250);
 
+  /* Focus ring. One ring for the whole application, never a per-component
+     choice, so "where am I" always looks the same. */
+  --focus-ring: oklch(0.53 0.16 150);
+
+  /* Elevation. Monotonic on purpose: DEEPER means "this is on top".
+     `--elev-lift` is the hover state for an interactive card; `--elev-pop` is
+     reserved for genuinely floating layers (the mobile tab bar, the More sheet,
+     a toast). The shadow tint is the ink hue, not pure black, so shadows warm
+     with the rest of the palette instead of greying it. */
+  --elev-tile: 0 1px 2px oklch(0.21 0.015 160 / 0.05);
+  --elev-card: 0 2px 12px oklch(0.21 0.015 160 / 0.06);
+  --elev-raised: 0 8px 28px oklch(0.21 0.015 160 / 0.1);
+  --elev-lift: 0 6px 20px oklch(0.21 0.015 160 / 0.08);
+  --elev-pop: 0 16px 48px oklch(0.21 0.015 160 / 0.16);
+}
+
+/* The same three scales, re-tinted. Hue held, lightness flipped, chroma pulled
+   back so a saturated red or gold does not vibrate against near-black. */
+[data-theme='dark'] {
+  --danger-50: oklch(0.25 0.055 27);
+  --danger-100: oklch(0.31 0.075 27);
+  --danger-200: oklch(0.4 0.095 27);
+  --danger-300: oklch(0.5 0.14 27);
+  --danger-500: oklch(0.63 0.2 27);
+  --danger-600: oklch(0.7 0.185 27);
+  --danger-700: oklch(0.8 0.145 27);
+  --danger-800: oklch(0.87 0.11 27);
+  --danger-900: oklch(0.93 0.08 27);
+
+  --warning-50: oklch(0.25 0.045 62);
+  --warning-100: oklch(0.31 0.062 60);
+  --warning-300: oklch(0.51 0.12 56);
+  --warning-500: oklch(0.66 0.15 58);
+  --warning-600: oklch(0.73 0.14 58);
+  --warning-700: oklch(0.83 0.105 60);
+
+  --locked-100: oklch(0.3 0.03 250);
+  --locked-300: oklch(0.48 0.06 250);
+  --locked-700: oklch(0.79 0.07 250);
+
+  --focus-ring: oklch(0.68 0.16 150);
+
+  /* Shadows DEEPER and STRONGER, never lighter. A shadow is the one token that
+     cannot simply invert: at the opacity that reads correctly on white it is
+     almost invisible on near-black, so every card would lose its elevation and
+     the interface would read as a flat sheet of text. Same monotonic ordering as
+     light - deeper still means "on top". */
+  --elev-tile: 0 1px 2px oklch(0 0 0 / 0.5);
+  --elev-card: 0 2px 12px oklch(0 0 0 / 0.55);
+  --elev-raised: 0 8px 28px oklch(0 0 0 / 0.6);
+  --elev-lift: 0 6px 20px oklch(0 0 0 / 0.55);
+  --elev-pop: 0 16px 48px oklch(0 0 0 / 0.7);
+}
+
+/* Geometry, type and motion. None of it is theme-dependent - there is no dark
+   variant of a radius - so it stays in a plain `@theme` and is emitted as real
+   custom properties. */
+@theme {
   /* Radii. Generous, matching the pill language of the references. */
   --radius-pill: 999px;
   --radius-card: 1.25rem;
@@ -100,13 +248,11 @@
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 
-  --shadow-tile: 0 1px 2px oklch(0.21 0.015 160 / 0.05);
-  --shadow-card: 0 2px 12px oklch(0.21 0.015 160 / 0.06);
-  --shadow-raised: 0 8px 28px oklch(0.21 0.015 160 / 0.1);
-  /* Two more elevations. `--shadow-lift` is the hover state for an interactive
-     card; `--shadow-pop` is reserved for genuinely floating layers (the mobile
-     tab bar, the More sheet, a toast). Deeper shadow therefore means "this is
-     on top", which is a signal worth keeping monotonic. */
+  /* Shadows are NOT here. They are scheme-dependent - a shadow tuned for white is
+     invisible on near-black - so they live in `:root` and `[data-theme='dark']` as
+     `--elev-*` and are mapped into the `--shadow-*` namespace by `@theme inline`
+     below. Declaring them in `@theme` would bake one value that the dark block
+     could only override by winning a specificity tie it should not have to win. */
   --shadow-lift: 0 6px 20px oklch(0.21 0.015 160 / 0.08);
   --shadow-pop: 0 16px 48px oklch(0.21 0.015 160 / 0.16);
 
@@ -134,6 +280,83 @@
   --animate-drift: drift 22s ease-in-out infinite alternate;
   --animate-rise: rise var(--duration-base) var(--ease-out-expo) both;
   --animate-pulse-ring: pulse-ring 2.4s var(--ease-out-expo) infinite;
+}
+
+/* ===========================================================================
+   THE MAPPING. This block is the reason theming is possible at all.
+
+   Every entry is `inline`, so Tailwind substitutes the value into each utility
+   rather than emitting `--color-ink-900: <value>` into `:root`. The utility
+   therefore reads `color: var(--ink-900)`, which the browser resolves AT PAINT
+   TIME against whichever `:root` / `[data-theme='dark']` is in effect.
+
+   Without `inline` this block compiles to a single baked value and the dark
+   scheme is never read - a dark theme that renders identically to light because
+   the layer above it resolved too early to see it. `inline` is load-bearing
+   here, not a style preference.
+
+   EVERY COLOUR DECLARED ABOVE MUST APPEAR BELOW. A token defined in `:root` and
+   missing from this map is invisible to Tailwind: `bg-danger-50` simply stops
+   existing, the class renders nothing, and the layout collapses underneath it
+   with no error anywhere. `tests/ui/theme.test.ts` fails the build on exactly
+   that, because nothing else would notice.
+   =========================================================================== */
+@theme inline {
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+
+  --color-ink-900: var(--ink-900);
+  --color-ink-700: var(--ink-700);
+  --color-ink-500: var(--ink-500);
+  --color-ink-400: var(--ink-400);
+  --color-ink-200: var(--ink-200);
+  --color-ink-100: var(--ink-100);
+
+  --color-gamify-400: var(--gamify-400);
+  --color-gamify-500: var(--gamify-500);
+  --color-gamify-600: var(--gamify-600);
+
+  --color-danger-50: var(--danger-50);
+  --color-danger-100: var(--danger-100);
+  --color-danger-200: var(--danger-200);
+  --color-danger-300: var(--danger-300);
+  --color-danger-500: var(--danger-500);
+  --color-danger-600: var(--danger-600);
+  --color-danger-700: var(--danger-700);
+  --color-danger-800: var(--danger-800);
+  --color-danger-900: var(--danger-900);
+
+  --color-warning-50: var(--warning-50);
+  --color-warning-100: var(--warning-100);
+  --color-warning-300: var(--warning-300);
+  --color-warning-500: var(--warning-500);
+  --color-warning-600: var(--warning-600);
+  --color-warning-700: var(--warning-700);
+
+  --color-locked-100: var(--locked-100);
+  --color-locked-300: var(--locked-300);
+  --color-locked-700: var(--locked-700);
+
+  --color-focus-ring: var(--focus-ring);
+
+  /* Mapped rather than declared, for the reason given in the `@theme` block. */
+  --shadow-tile: var(--elev-tile);
+  --shadow-card: var(--elev-card);
+  --shadow-raised: var(--elev-raised);
+  --shadow-lift: var(--elev-lift);
+  --shadow-pop: var(--elev-pop);
 }
 
 @keyframes shimmer {
@@ -200,8 +423,13 @@ html {
 }
 
 body {
-  background-color: var(--color-canvas);
-  color: var(--color-ink-900);
+  /* These read the RAW `--canvas` / `--ink-900`, not the `--color-*` names.
+     `@theme inline` substitutes values into utilities rather than emitting
+     `--color-*` custom properties, so a `var(--color-ink-900)` written by hand
+     here would resolve to nothing. The raw name is also the honest one to
+     reference from hand-written CSS: it is the thing that actually exists. */
+  background-color: var(--canvas);
+  color: var(--ink-900);
   font-family: var(--font-sans);
   /* Fills the viewport, so the bottom nav never floats over a short page. */
   min-height: 100dvh;
@@ -210,7 +438,7 @@ body {
 /* A single, consistent focus treatment. Focus must always be visible: this is
    a financial product and keyboard users are not an afterthought. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 0.5rem;
 }
@@ -247,13 +475,13 @@ body {
    the loop the skeleton is indistinguishable from an empty surface - there is
    no visible seam pulsing at the edges. */
 .skeleton {
-  background-color: var(--color-ink-100);
+  background-color: var(--ink-100);
   background-image: linear-gradient(
     90deg,
-    var(--color-ink-100) 0%,
-    var(--color-ink-200) 40%,
-    var(--color-ink-200) 60%,
-    var(--color-ink-100) 100%
+    var(--ink-100) 0%,
+    var(--ink-200) 40%,
+    var(--ink-200) 60%,
+    var(--ink-100) 100%
   );
   background-size: 200% 100%;
   background-repeat: no-repeat;
@@ -274,16 +502,8 @@ body {
    is why the hero always renders a `relative` wrapper. */
 .wash-brand {
   background-image:
-    radial-gradient(
-      60% 55% at 12% 8%,
-      var(--color-brand-100) 0%,
-      transparent 70%
-    ),
-    radial-gradient(
-      45% 45% at 88% 4%,
-      var(--color-brand-50) 0%,
-      transparent 65%
-    );
+    radial-gradient(60% 55% at 12% 8%, var(--brand-100) 0%, transparent 70%),
+    radial-gradient(45% 45% at 88% 4%, var(--brand-50) 0%, transparent 65%);
 }
 
 /* Text that fades from ink into brand rather than switching colour abruptly.
@@ -298,9 +518,9 @@ body {
 .text-gradient-brand {
   background-image: linear-gradient(
     100deg,
-    var(--color-brand-700) 0%,
-    var(--color-brand-500) 45%,
-    var(--color-brand-600) 100%
+    var(--brand-700) 0%,
+    var(--brand-500) 45%,
+    var(--brand-600) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -309,7 +529,7 @@ body {
 
 @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
   .text-gradient-brand {
-    color: var(--color-brand-700);
+    color: var(--brand-700);
   }
 }
 

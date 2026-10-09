@@ -37,7 +37,14 @@ describe('TextInput describes its error', () => {
   it('references the error, which is currently orphaned', () => {
     // THE regression. This fails against the implementation because the
     // `hint && !error` condition resolves the whole attribute to undefined.
-    render(<TextInput id="password" label="Password" hint="At least 12 characters." error="Too short." />);
+    render(
+      <TextInput
+        id="password"
+        label="Password"
+        hint="At least 12 characters."
+        error="Too short."
+      />,
+    );
 
     const input = screen.getByLabelText('Password');
 

@@ -45,7 +45,13 @@ const TONE: Record<CardTone, string> = {
  * width will animate that width and produce a visible smear. Shadow is the only
  * thing `interactive` changes.
  */
-export function Card({ children, className, tone = 'surface', as = 'div', interactive = false }: CardProps) {
+export function Card({
+  children,
+  className,
+  tone = 'surface',
+  as = 'div',
+  interactive = false,
+}: CardProps) {
   const Tag = as;
 
   return (

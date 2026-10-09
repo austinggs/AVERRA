@@ -28,6 +28,34 @@ export interface PillTabItem {
   href?: string;
 }
 
+/**
+ * Whether arrowing onto a tab also selects it.
+ *
+ * `automatic` - focus moves AND the tab activates.
+ * `manual`     - focus moves only; the user presses Enter or clicks.
+ *
+ * WHY THE DEFAULT IS DERIVED FROM THE ITEMS
+ *
+ * These are two different patterns and only one of them can be automatic.
+ *
+ * A tab that filters in place can afford automatic activation: arrowing past four
+ * filters is free, and making the user press Enter after each arrow is the thing
+ * APG is trying to avoid.
+ *
+ * A tab that is a LINK cannot. Activating one navigates, and a navigation per
+ * arrow press means a server round trip, a scroll reset and a full page swap for
+ * every arrow the user holds down. APG is explicit that automatic activation is
+ * wrong when activating a tab costs a page load, and it is the reason this control
+ * was wrong before it was inert: the comment claimed "automatic activation" while
+ * the code could only ever move focus, because the earn page's tabs are links and
+ * a link cannot be activated by focusing it.
+ *
+ * So a link-bearing group is MANUAL by default, which is also what every other
+ * native link group does - a sidebar, a browser tab strip, a card carousel. Arrow
+ * to highlight, Enter to go.
+ */
+export type PillTabsActivation = 'automatic' | 'manual';
+
 interface PillTabsProps {
   items: ReadonlyArray<PillTabItem>;
   activeKey: string;
@@ -35,6 +63,41 @@ interface PillTabsProps {
   /** Optional. A linked tab navigates on its own and never calls this. */
   onSelect?: (key: string) => void;
   className?: string;
+  /**
+   * Base id used to wire tabs to their panels.
+   *
+   * When supplied, every tab gets an `id` and an `aria-controls` pointing at the
+   * panel for that tab, and the panel itself gets the matching `id`. When
+   * omitted, no ids are emitted at all.
+   *
+   * It is optional rather than required because a group with no tabpanel - a
+   * filter bar above a table, say - has nothing to point at, and an
+   * `aria-controls` naming a non-existent element is worse than none: assistive
+   * technology reports a broken relationship instead of no relationship.
+   */
+  idPrefix?: string;
+  /**
+   * Overrides the derived default. Only needed to force `manual` on a purely
+   * local group whose selection is expensive to recompute.
+   */
+  activation?: PillTabsActivation;
+}
+
+/** The id a tab carries, given its group's prefix. */
+export function pillTabId(prefix: string, key: string): string {
+  return `${prefix}-tab-${key}`;
+}
+
+/**
+ * The id the panel for a tab must carry.
+ *
+ * Exported so the page rendering the panel cannot drift from the page rendering
+ * the tabs. Both call this with the same two arguments, so a renamed prefix
+ * breaks one side loudly instead of silently producing a dangling
+ * `aria-controls`.
+ */
+export function pillTabPanelId(prefix: string, key: string): string {
+  return `${prefix}-panel-${key}`;
 }
 
 /**
@@ -50,9 +113,27 @@ interface PillTabsProps {
  * A tab here is therefore a LINK first and a button second. A link works before
  * JavaScript runs, supports middle-click and open-in-new-tab, and is crawlable;
  * a handler-only tab fails all three at once while looking correct.
+ *
+ * Making it a link has a consequence for the keyboard model, and the two are not
+ * separable. See `PillTabsActivation` below: a link cannot be activated by
+ * focusing it, so this group is MANUAL by default and the arrow keys move focus
+ * without navigating.
  */
-export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: PillTabsProps) {
+export function PillTabs({
+  items,
+  activeKey,
+  ariaLabel,
+  onSelect,
+  className,
+  idPrefix,
+  activation,
+}: PillTabsProps) {
   const nodes = useRef<Array<HTMLAnchorElement | HTMLButtonElement | null>>([]);
+
+  // Derived, not declared: a caller should get the safe behaviour by forgetting
+  // to think about it. See PillTabsActivation for why links cannot be automatic.
+  const mode: PillTabsActivation =
+    activation ?? (items.some((item) => item.href) ? 'manual' : 'automatic');
 
   /** Moves focus, wrapping in both directions. */
   function focusAt(index: number) {
@@ -62,8 +143,7 @@ export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: P
   }
 
   /**
-   * APG automatic activation: arrowing onto another tab both moves focus and
-   * selects it, so the user does not also have to press Enter.
+   * APG keyboard handling: arrows and Home/End move focus, wrapping.
    *
    * The origin is the FOCUSED tab, not `activeKey`. `activeKey` is server state
    * read from the URL, so between a keypress and the navigation it resolves, it is
@@ -80,7 +160,10 @@ export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: P
     const from =
       focused >= 0
         ? focused
-        : Math.max(0, items.findIndex((item) => item.key === activeKey));
+        : Math.max(
+            0,
+            items.findIndex((item) => item.key === activeKey),
+          );
 
     let next: number;
     switch (event.key) {
@@ -106,7 +189,14 @@ export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: P
     focusAt(next);
 
     const target = items[((next % items.length) + items.length) % items.length];
-    if (target && target.key !== activeKey) onSelect?.(target.key);
+    if (!target) return;
+
+    // Only AUTOMATIC mode activates on focus. A linked group stops here, and
+    // Enter or a click navigates - which is native link behaviour, and is why no
+    // Space handling is added here: Space scrolls the page, and hijacking it
+    // inside a group of links would break scrolling for keyboard users.
+    if (mode !== 'automatic') return;
+    if (target.key !== activeKey) onSelect?.(target.key);
   }
 
   return (
@@ -138,6 +228,16 @@ export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: P
               : 'bg-surface text-ink-500 border border-ink-200 hover:bg-surface-sunken',
           ),
           style: { outlineOffset: '2px' },
+          // Only emitted when the caller declared a panel to point at. See
+          // `idPrefix`: an aria-controls naming nothing is a broken relationship,
+          // and the panel renders in a different file from this component, so the
+          // two ids must come from the same exported helpers.
+          ...(idPrefix
+            ? {
+                id: pillTabId(idPrefix, item.key),
+                'aria-controls': pillTabPanelId(idPrefix, item.key),
+              }
+            : {}),
         };
 
         const label = (
@@ -160,7 +260,13 @@ export function PillTabs({ items, activeKey, ariaLabel, onSelect, className }: P
             {label}
           </Link>
         ) : (
-          <button key={item.key} {...shared} ref={ref} type="button" onClick={() => onSelect?.(item.key)}>
+          <button
+            key={item.key}
+            {...shared}
+            ref={ref}
+            type="button"
+            onClick={() => onSelect?.(item.key)}
+          >
             {label}
           </button>
         );

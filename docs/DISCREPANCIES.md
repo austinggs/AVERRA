@@ -1,7 +1,7 @@
 # Averra - Discrepancy Log
 
 Document: docs/DISCREPANCIES.md
-Last reviewed: 2026-10-07
+Last reviewed: 2026-10-09
 Purpose: record where the source-of-truth corpus disagreed, what was decided, and what
 was retracted. Per doc 78, a discrepancy is never resolved silently.
 
@@ -2407,7 +2407,7 @@ hits), so the loss is permanent, not deferred.
 **Why it was invisible.** Every reversal test in the corpus reverses a reward that is
 still `PENDING` and still holding its balance. That is the only case that works, and it
 is the case least likely to occur in production the moment a provider settles on any
-real cadence. CR-0033 verified the gate was *correct* at the moment of release; nothing
+real cadence. CR-0033 verified the gate was _correct_ at the moment of release; nothing
 ever checked that the release was still reversible a quarter later.
 
 **Why this is not a "provider problem".** CPX behaved correctly throughout: the
@@ -2416,7 +2416,7 @@ cycle shorter than the vendor's right to take it back.
 
 **Resolution.** Migration 066 requires `p_period_end <= now() - interval '90 days'`
 before any reward may be released, anchored on `period_end` because that bounds the
-*youngest* conversion in the period. Deliberately not configurable: a tunable window is
+_youngest_ conversion in the period. Deliberately not configurable: a tunable window is
 a defect one `UPDATE` from returning. The cost is real and stated plainly - users wait
 ~90 days longer to be paid - and it was chosen over paying users and being unable to
 take the money back. See `docs/change-records/CR-0037-settlement-maturity-gate.md`.
@@ -2448,7 +2448,7 @@ Three separate reasons this is worse than dead code:
    "what is our rate-limiting posture", and it currently answers wrongly.
 3. **The fraud detectors do not compensate.** `TASK_VELOCITY`,
    `WITHDRAWAL_VELOCITY`, `DEPOSIT_VELOCITY` and `PROVIDER_CALLBACK_VELOCITY` detect
-   abuse *after the fact*, by counting committed rows in a window. A limiter prevents
+   abuse _after the fact_, by counting committed rows in a window. A limiter prevents
    request volume. Neither substitutes for the other, and describing the detectors as
    rate limiting would be exactly the overstatement to avoid.
 
@@ -2500,8 +2500,8 @@ implementation at all.
 
 **Why this is the same defect as Q-59.** There, `app_private.settle_provider_period` was
 the only path to AVAILABLE and had no reachable entry point, so a PENDING reward had no
-release. Verifying the function's *logic* was sound and said nothing about whether it
-could *run*. Here the logic is sound and nothing invokes it.
+release. Verifying the function's _logic_ was sound and said nothing about whether it
+could _run_. Here the logic is sound and nothing invokes it.
 
 The generalisation, and the fourth time this repository has learned it: **a control is
 defined by a reachable call path, not by an accurate function body.** Checking that a
@@ -2518,6 +2518,7 @@ required by `src/lib/env.ts`. The referral page built its share link as
 a relative path that does nothing once pasted into a chat app - a referral acquisition
 link that is dead in production and throws no error. Same shape: a missing thing that
 looks fine until someone follows it.
+
 ## Q-63 - `.env.example` declared `NEXT_PUBLIC_SITE_URL` twice, and the empty copy won
 
 Found 2026-10-09 while preparing the design-system phase of the paid-perks work.
@@ -2576,6 +2577,16 @@ compile-time `@theme` into plain `:root` / `[data-theme]` custom properties rema
 runtime. This is recorded as a correction forward rather than an edit to CR-0004, per the
 applied-record rule.
 
+**Built 2026-10-09 (CR-0040 follow-on).** The layer described above now exists and is
+wired: colours live in `:root` and `[data-theme='dark']` and are mapped through
+`@theme inline`, an inline bootstrap script in `<head>` writes `data-theme` before first
+paint, and Settings carries a Light/Dark/System control. Verified against the BUILT
+stylesheet rather than against the source: `.bg-surface` compiles to
+`background-color:var(--surface)` and `.text-ink-900` to `color:var(--ink-900)`, so the
+utilities resolve at paint time and the dark block is actually reachable. A source-level
+check would have passed either way. The entry stays open as a record of what CR-0004
+claimed.
+
 **Scope boundary.** Light/Dark ships as a free accessibility pair following
 `prefers-color-scheme`. It is deliberately **not** the paid theme perk:
 `app.paid_perk_kind` includes `'THEME'` (migration 040), and docs 83 and 84 both treat
@@ -2630,7 +2641,202 @@ specifically so the mapping did not have to round.
 
 **The gate.** `tests/ui/design-tokens.test.tsx` now asserts BOTH rules, and the second
 one reads source, because a behavioural test cannot tell `bg-danger-100` from `bg-red-100`
+
 - they render identically. Only the absence of a vendor palette from files whose job is to
-use ours is assertable by reading them. It reports its population (`99 scanned, 0 bad`)
-and has a guard test asserting it scanned more than 50 files, so the walk cannot silently
-return nothing and pass vacuously - the Q-22 failure mode.
+  use ours is assertable by reading them. It reports its population (`99 scanned, 0 bad`)
+  and has a guard test asserting it scanned more than 50 files, so the walk cannot silently
+  return nothing and pass vacuously - the Q-22 failure mode.
+
+## Q-66 - `?error=toString` on the sign-in page crashed the page
+
+Found 2026-10-09 while writing the regression tests CR-0040 left outstanding.
+
+**What was true.** The sign-in page mapped `searchParams.error` through an allowlist:
+
+```ts
+const AUTH_ERRORS: Record<string, string> = {
+  auth_callback_failed: 'That sign-in link could not be completed. …',
+  otp_expired: 'That verification link has expired. …',
+};
+const message = code
+  ? (AUTH_ERRORS[code] ?? 'We could not complete that sign-in. Please try again.')
+  : null;
+```
+
+The `??` fallback reads as exhaustive. It is exhaustive only over the keys somebody
+imagined, because `AUTH_ERRORS` is an **object literal** and therefore inherits from
+`Object.prototype`:
+
+```console
+> A = { auth_callback_failed: 'x' }
+> A['constructor']
+[Function: Object]
+> A['constructor'] ?? 'FALLBACK'
+[Function: Object]
+```
+
+Every inherited member is a defined, non-nullish property, so `??` never fires for any of
+them. `constructor`, `toString`, `valueOf`, `hasOwnProperty`, `__proto__` and
+`__defineGetter__` all resolve to a **function**, the fallback is skipped, and the
+function is handed to React as a child - which throws.
+
+**Reachability is what makes this a defect rather than a curiosity.** It is one query
+string: `GET /sign-in?error=toString` is a crash, not a rendering oddity. Nothing about
+it looks like an attack in a log, and the user simply gets a blank page after following a
+legitimate-looking link.
+
+This is the same failure family as the `safeNext` defect fixed one layer over in the same
+change record - a check that reads as total and is only total over the cases its author
+considered - and the same family as the Q-22 leak check, where a predicate that matched
+zero rows was reported as a security assurance.
+
+**Status.** Fixed. The allowlist moved to `src/lib/auth/errors.ts` (a page is an async
+Server Component that calls `getSessionUser()` and `redirect()`, so an allowlist declared
+inside it was untestable) and the lookup became an own-property test:
+
+```ts
+if (!Object.hasOwn(AUTH_ERROR_MESSAGES, trimmed)) return AUTH_ERROR_FALLBACK;
+return AUTH_ERROR_MESSAGES[trimmed];
+```
+
+`Object.hasOwn` asks whether the allowlist really declares this code, rather than whether
+some property somewhere resolves to it.
+
+**The gate.** `tests/auth/sign-in-errors.test.ts` asserts all nine prototype keys resolve
+to the fallback as a string. Per the rule that a test must be shown to fail: the `??` form
+was re-injected, the suite produced **10 named failures**, and the file was restored.
+
+## Q-67 - white text on `--brand-500` is below WCAG AA for body-size text
+
+Found 2026-10-09 while defining the dark scheme, and left unfixed deliberately.
+
+**What is true.** `--brand-500` is `oklch(0.63 0.19 150)` in the light scheme and is held
+at exactly the same value in dark - a deliberate decision, since the vivid green is the
+brand and a brand that changes colour when the OS does is not a brand. Three components
+put white text directly on it:
+
+- `Card tone="brand"` - `bg-brand-500 text-white`, at body sizes
+- the active `PillTabs` tab - `bg-brand-500 text-white text-sm font-semibold`
+- `BrandLockup`'s mark - `bg-brand-500 text-white font-black`
+
+White on `oklch(0.63 0.19 150)` lands around **3.1:1**. WCAG 2.2 AA requires 4.5:1 for
+normal text and 3:1 only for "large" text, which means 24px, or 18.66px when bold. A 14px
+semibold button and the brand card's body copy are neither.
+
+**Why it was not fixed here.** Every fix is a brand decision, not an engineering one:
+
+1. Darken `--brand-500` far enough for white to pass - it stops being the vivid green the
+   whole design system and the `DESIGNS/` references are built on.
+2. Change the foreground to `--brand-900` - the green on green loses the pill treatment
+   that the "active tab" affordance depends on.
+3. Keep `--brand-500` as an accent for icons and borders only, and introduce a distinct
+   darker `--brand-solid` for solid surfaces carrying text.
+
+Option 3 is the correct one and it is a two-token change plus a sweep, but it changes how
+the brand reads, which is not a call this change record should make unilaterally.
+
+**Status.** Open. No component was changed. Recorded so it is not rediscovered as a
+contrast-audit finding later and mistaken for a new defect.
+
+## Q-68 - the supplied logo cannot be used, and it is not this brand's colour
+
+Found 2026-10-09 while consolidating the brand lockup.
+
+**What was supplied.** `AVERRA_LOGO.png`, one file, 1254 x 1254. It is a **presentation
+mockup**, not a production asset, and three independent facts each rule it out on their own:
+
+1. **It is a full lockup on an opaque near-black square**, not a square mark. The mark
+   appears above the wordmark "AVERRA" and the tagline "EARN · PLAY · GROW". Placed in a
+   32px header the wordmark becomes an unreadable smear, and the near-black background
+   renders as a visible dark block on every light surface in the application.
+2. **Its gradient is blue to purple.** Every colour token in the design system is green -
+   `--brand-500` at hue 150, the active tab, the settled-money badge, the `DESIGNS/`
+   reference direction recorded in `globals.css`. Dropping this file into a component
+   ships a second, competing brand identity.
+3. **There is no transparent-background export and no vector.** Rasterising to 32px
+   destroys exactly the ribbon-fold detail that makes the mark recognisable, which is the
+   one thing a small mark has left.
+
+**Why this was not "fixed" by generating an SVG.** A plausible-looking vector "A" would be
+an invention of brand identity presented as an asset, which doc 78 forbids in the same way
+as inventing a token contract address. Worse, it would be indistinguishable from a
+delivered mark at review time, and nobody would be able to tell which parts of the brand
+were designed and which were reconstructed by an engineer on a deadline.
+
+**Status.** Deferred, with the refactor done so that landing the real asset is a one-file
+change. The lockup was duplicated verbatim in four places - the app shell, sign-in,
+sign-up and the marketing header - and four copies of a brand mark is four chances to
+drift, with a brand that is correct in three places and slightly wrong in the fourth
+reading as intentional. All four now render `<BrandLockup>` from
+`src/components/brand/BrandLockup.tsx`, which keeps the token-driven mark the application
+has always shown.
+
+**What the designer needs to supply**, for the swap to be complete:
+
+- a square mark on a **transparent** background, as SVG (not PNG), that works at 32px
+- a lockup with the wordmark as **live text or outlined vector**, not rasterised
+- a **monochrome** variant for favicon and app-icon use
+- a decision on **green versus the blue/purple gradient** in AVERRA_LOGO.png, and if the
+  gradient wins, a matching revision to `--brand-*` in `globals.css`
+
+Until then `BrandMark` stays token-driven, so it is correct in both light and dark and
+never diverges from the palette.
+
+## Q-69 - a raw NUL byte made a test file binary to git
+
+Found 2026-10-09, incidentally, while reading `git diff --stat` at the end of CR-0040.
+
+**What was true.** `tests/auth/next.test.ts` contains a corpus of hostile `next` values
+that `safeNext` must reject, including one with an embedded control character. It was
+written with a **literal U+0000 byte** rather than the escape sequence:
+
+```
+'/ //evil.com',        <- contains a raw NUL, not the six characters \u0000
+```
+
+The test is correct and has always been correct - the JavaScript string genuinely
+contains U+0000, and `safeNext` rejects it via a control-character class. Nothing was
+broken at runtime.
+
+**Why it still mattered.** A raw NUL in a source file causes git to treat the whole
+file as binary:
+
+```
+ tests/auth/next.test.ts | Bin 3251 -> 3160 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+```
+
+So the file stopped appearing in code review. Every future change to the redirect
+allowlist - the single most security-relevant helper in the auth path - would have
+shown up as `Bin NNN -> MMM` and been unreviewable by default. Typecheck, lint and the
+suite were all green, because a NUL is a legal character in a string literal.
+
+It is also invisible in the editor: nothing renders where the byte is, so the line
+reads as `'/ //evil.com'` - a string that is easy to misread as whitespace.
+
+**Status.** Fixed. The literal is now the six-character escape sequence. Identical
+runtime value, same coverage, and the file is text again. Confirmed by sweeping every
+`.ts`, `.tsx` and `.css` file under `src/` and `tests/`: zero NUL bytes remain.
+
+**A second instance, in PRODUCTION code, found by the same sweep.** After the first was
+fixed, a byte-level sweep of `src/`, `tests/` and `docs/` found two raw **U+0007 (BEL)**
+characters in `src/app/(app)/earn/page.tsx`:
+
+```ts
+// .from('offers'). The <BEL>pp schema is not exposed through the Data API.
+// The wrappers already join <BEL>pp.providers and filter on lifecycle_state =
+```
+
+BEL renders as nothing, so those lines read as "The pp schema" and "join pp.providers" -
+a garbled reference to `app.providers`, in the two comments that explain why the earn
+page must not call `.from()` directly. That is the Data API rule of doc 82, and its
+explanation had been quietly corrupted in a way that reads like a typo rather than a
+signal. This file was not binary to git, so nothing would ever have surfaced it.
+
+Both bytes are now `a`. The sweep reports zero control bytes across every `.ts`, `.tsx`,
+`.css` and `.md` file under `src/`, `tests/` and `docs/`.
+
+The general rule this is an instance of: **a byte that a tool cannot render is a byte
+a reviewer cannot see.** Escape anything below U+0020 in source, always. The cheap
+detection is not a lint rule - it is `git diff --stat` printing `Bin` where text was
+expected, and a byte scan, which is why the sweep was worth running at all.

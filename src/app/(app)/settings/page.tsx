@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, Pill, SectionHeading } from '@/components/ui/Card';
 import { ButtonLink } from '@/components/ui/Button';
 import { DisplayNameForm } from '@/components/settings/DisplayNameForm';
+import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
 export const metadata = { title: 'Settings - Averra' };
 
@@ -53,6 +54,26 @@ export default async function SettingsPage() {
               accountStatus={profile?.account_status ?? 'ACTIVE'}
             />
           )}
+        </Card>
+      </section>
+
+      <section className="mt-6">
+        <SectionHeading title="Appearance" />
+        <Card className="mt-3">
+          {/*
+            A DISPLAY PREFERENCE, and grouped with "what you own" rather than
+            "what we control" for one reason: it is the only setting on this page
+            that changes nothing on our side. It is stored in this browser, it is
+            not an account attribute, and clearing site data resets it. The copy
+            says so, because a user who expects their theme to follow them to
+            another device will otherwise assume it broke.
+          */}
+          <ThemeToggle />
+
+          <p className="mt-4 text-xs leading-relaxed text-ink-500">
+            Light, dark or your device&apos;s setting. This is remembered in this browser only and
+            is not tied to your account, so it will not follow you to another device.
+          </p>
         </Card>
       </section>
 

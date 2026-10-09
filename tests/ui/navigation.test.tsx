@@ -94,9 +94,7 @@ describe('BottomNav (mobile)', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
     for (const tab of SECONDARY_TABS) {
-      expect(
-        within(dialog).getByRole('link', { name: new RegExp(tab.label) }),
-      ).toBeInTheDocument();
+      expect(within(dialog).getByRole('link', { name: new RegExp(tab.label) })).toBeInTheDocument();
     }
 
     // The core tabs are NOT duplicated inside the sheet.

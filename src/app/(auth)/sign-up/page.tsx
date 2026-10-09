@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { getSessionUser } from '@/lib/auth/session';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 import { Card, Pill } from '@/components/ui/Card';
 import { SignUpForm } from './SignUpForm';
 
@@ -15,15 +15,7 @@ export default async function SignUpPage() {
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-12">
-      <Link href="/" className="mb-8 flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className="grid size-8 place-items-center rounded-tile bg-brand-500 text-sm font-black text-white"
-        >
-          A
-        </span>
-        <span className="text-base font-bold tracking-tight text-ink-900">Averra</span>
-      </Link>
+      <BrandLockup href="/" className="mb-8" />
 
       <Card className="w-full max-w-md">
         <Pill tone="brand">Free to join</Pill>

@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { PillTabs } from '@/components/ui/PillTabs';
+import { PillTabs, pillTabId, pillTabPanelId } from '@/components/ui/PillTabs';
 
 // PillTabs shipped completely inert.
 //
@@ -62,7 +62,10 @@ describe('PillTabs is reachable', () => {
     renderTabs('offers');
 
     expect(screen.getByRole('tab', { name: 'Offers' })).toHaveAttribute('href', '/earn?tab=offers');
-    expect(screen.getByRole('tab', { name: 'Surveys' })).toHaveAttribute('href', '/earn?tab=surveys');
+    expect(screen.getByRole('tab', { name: 'Surveys' })).toHaveAttribute(
+      'href',
+      '/earn?tab=surveys',
+    );
     expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('href', '/earn?tab=tasks');
   });
 
@@ -147,28 +150,104 @@ describe('PillTabs keyboard behaviour (APG)', () => {
     expect(document.activeElement).toBe(tabs[0]);
   });
 
-  it('activates the newly focused tab, so the panel follows focus', () => {
-    // Automatic activation. The panels here are two URL variants of one cheap
-    // server read, so the user should not have to press Enter after arrowing.
+  // ACTIVATION IS DERIVED FROM THE ITEMS, AND THE TWO CASES DIFFER
+  //
+  // This file previously asserted "automatic activation" against a group whose items
+  // all carried an `href`, and it passed - because the test passed an `onSelect` that
+  // the only real caller (the earn page) does not pass, and the component called it
+  // on arrow regardless. The earn page's tabs are links, so a link was never
+  // activated by an arrow key: focus moved and nothing happened.
+  //
+  // That is the right behaviour for a link, and APG says so - automatic activation is
+  // wrong when activating a tab costs a page load. But the code and its comment
+  // claimed something else, which is the defect worth pinning. So:
+  //
+  //   a group with LINKS   -> manual: arrows move focus, Enter or click navigates
+  //   a group with NO href -> automatic: arrows move focus AND filter in place
+  it('moves focus WITHOUT activating a linked tab, because a link needs Enter', () => {
+    // THE regression. Against the unconditional `onSelect` call this fires, and the
+    // earn page would have re-requested the page on every arrow press.
     const onSelect = vi.fn();
     renderTabs('offers', { onSelect });
 
     const tabs = threeTabs();
-
     fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
-    expect(onSelect).toHaveBeenCalledWith('surveys');
 
-    fireEvent.keyDown(tabs[1], { key: 'End' });
-    expect(onSelect).toHaveBeenLastCalledWith('tasks');
+    expect(document.activeElement).toBe(tabs[1]);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('still lets a linked tab be clicked, so manual activation is reachable', () => {
+    // Manual must not mean unreachable. The link navigates natively.
+    renderTabs('offers');
+
+    expect(screen.getByRole('tab', { name: 'Surveys' })).toHaveAttribute(
+      'href',
+      '/earn?tab=surveys',
+    );
+  });
+
+  it('activates automatically when no tab navigates, because filtering is free', () => {
+    const onSelect = vi.fn();
+    render(
+      <PillTabs
+        items={[
+          { key: 'offers', label: 'Offers' },
+          { key: 'surveys', label: 'Surveys' },
+          { key: 'tasks', label: 'Tasks' },
+        ]}
+        activeKey="offers"
+        ariaLabel="Inventory"
+        onSelect={onSelect}
+      />,
+    );
+
+    const tabs = screen.getAllByRole('tab') as [HTMLElement, HTMLElement, HTMLElement];
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+
+    expect(onSelect).toHaveBeenCalledWith('surveys');
+  });
+
+  it('honours an explicit override, so a caller can force manual', () => {
+    // The escape hatch, asserted because an escape hatch nobody tests is a lie.
+    const onSelect = vi.fn();
+    render(
+      <PillTabs
+        items={[
+          { key: 'offers', label: 'Offers' },
+          { key: 'surveys', label: 'Surveys' },
+        ]}
+        activeKey="offers"
+        ariaLabel="Inventory"
+        onSelect={onSelect}
+        activation="manual"
+      />,
+    );
+
+    const tabs = screen.getAllByRole('tab') as [HTMLElement, HTMLElement];
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+
+    expect(document.activeElement).toBe(tabs[1]);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('does not re-activate the tab that is already active', () => {
-    // Arrowing onto the current tab must not fire a navigation to where the user
-    // already is, which would reset the page for no reason.
+    // Arrowing onto the current tab must not fire a selection for where the user
+    // already is, which would reset the list for no reason.
     const onSelect = vi.fn();
-    renderTabs('offers', { onSelect });
+    render(
+      <PillTabs
+        items={[
+          { key: 'offers', label: 'Offers' },
+          { key: 'surveys', label: 'Surveys' },
+        ]}
+        activeKey="offers"
+        ariaLabel="Inventory"
+        onSelect={onSelect}
+      />,
+    );
 
-    fireEvent.keyDown(threeTabs()[0], { key: 'Home' });
+    fireEvent.keyDown(screen.getAllByRole('tab')[0] as HTMLElement, { key: 'Home' });
 
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -225,6 +304,62 @@ describe('PillTabs with items that have no href', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Surveys' }));
 
     expect(onSelect).toHaveBeenCalledWith('surveys');
+  });
+});
+
+describe('PillTabs wires tabs to their panel only when one is declared', () => {
+  it('emits no aria-controls without a prefix, rather than a dangling id', () => {
+    // An `aria-controls` naming an element that does not exist is a BROKEN
+    // relationship, which assistive technology reports differently from no
+    // relationship at all. A filter bar above a table has no panel to point at.
+    renderTabs('offers');
+
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab).not.toHaveAttribute('aria-controls');
+      expect(tab.id).toBe('');
+    }
+  });
+
+  it('points each tab at the panel id the page will render for it', () => {
+    renderTabs('offers', { idPrefix: 'earn' });
+
+    expect(screen.getByRole('tab', { name: 'Offers' })).toHaveAttribute(
+      'aria-controls',
+      pillTabPanelId('earn', 'offers'),
+    );
+    expect(screen.getByRole('tab', { name: 'Surveys' })).toHaveAttribute(
+      'aria-controls',
+      pillTabPanelId('earn', 'surveys'),
+    );
+  });
+
+  it('gives each tab the id the panel will point back to', () => {
+    // The reverse half of the relationship, which is what makes a screen reader
+    // announce WHICH tab a panel belongs to.
+    renderTabs('offers', { idPrefix: 'earn' });
+
+    expect(screen.getByRole('tab', { name: 'Offers' })).toHaveAttribute(
+      'id',
+      pillTabId('earn', 'offers'),
+    );
+  });
+
+  it('keeps two groups on one page from colliding', () => {
+    // Ids are global to the document. A hardcoded prefix would make the second
+    // tab group on any page shadow the first.
+    render(
+      <>
+        <PillTabs items={ITEMS} activeKey="offers" ariaLabel="A" idPrefix="earn" />
+        <PillTabs items={ITEMS} activeKey="offers" ariaLabel="B" idPrefix="tasks" />
+      </>,
+    );
+
+    const both = screen.getAllByRole('tab', { name: 'Offers' });
+    const first = both[0] as HTMLElement;
+    const second = both[1] as HTMLElement;
+
+    expect(first.id).not.toBe(second.id);
+    expect(first.getAttribute('aria-controls')).not.toBe(second.getAttribute('aria-controls'));
   });
 });
 

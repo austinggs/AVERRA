@@ -78,6 +78,7 @@ And the file asserting "no hardcoded hex values in components" was enforced by a
 that passed: **20 vendor-palette utilities across 13 files** (`bg-red-50`,
 `text-red-700`, `border-red-200`) in the auth forms, both wallet forms, both support
 forms, the review form, the game shell, and three components of the design system.
+
 ## Three decisions worth defending
 
 **Tabs carry their own `href` rather than taking an `hrefFor(key)` callback.** The
@@ -103,12 +104,12 @@ tab fired. `event.target` is correct.
 
 ## The gates added
 
-| Test | Asserts | Population |
-| --- | --- | --- |
-| `tests/ui/pilltabs.test.tsx` | tabs are links; APG keyboard; 44px | - |
-| `tests/ui/field.test.tsx` | error is reachable via `aria-describedby` | - |
-| `tests/auth/next.test.ts` | 25 rejected redirect shapes | - |
-| `tests/ui/design-tokens.test.tsx` | distinct financial states; no vendor palette | 99 files |
+| Test                              | Asserts                                      | Population |
+| --------------------------------- | -------------------------------------------- | ---------- |
+| `tests/ui/pilltabs.test.tsx`      | tabs are links; APG keyboard; 44px           | -          |
+| `tests/ui/field.test.tsx`         | error is reachable via `aria-describedby`    | -          |
+| `tests/auth/next.test.ts`         | 25 rejected redirect shapes                  | -          |
+| `tests/ui/design-tokens.test.tsx` | distinct financial states; no vendor palette | 99 files   |
 
 Each was written **before** the fix and run against the broken code first. `pilltabs`
 failed 6 of 12; `field` failed 1 of 7 with the attribute empty; `next` covers a bypass
@@ -127,11 +128,94 @@ have to round), `warning` (orange, hue ~55-68, held below gamify's gold at ~80-9
 
 ## Explicitly not done here
 
-- **Dark theme.** Q-64 records that CR-0004's claim that dark tokens existed was false;
-  there were none. Building them is its own change, and it is the reason `danger`,
-  `warning` and `locked` were defined as scales first - a dark theme remaps tokens, and
-  it cannot remap `bg-red-50` in thirteen files.
-- **The logo and the duplicated brand markup** (`BrandLockup`). Blocked on the logo
-  source; `AVERRA_LOGO.png` is a 1254x1254 opaque near-black lockup, unusable at 32px.
 - **Decorative `THEME` perks.** Remain entitlement-gated and unbuilt. The Light/Dark
-  accessibility pair is not that perk.
+  accessibility pair is not that perk, per Q-64's scope boundary.
+- **The logo asset itself.** See "Follow-on" below.
+
+## Follow-on, 2026-10-09 - the four open items
+
+All four items this record listed as outstanding were completed, and completing them
+surfaced two further defects that are recorded as Q-66 and Q-67.
+
+### The auth regression tests, and what they found
+
+`tests/auth/callback-route.test.ts` asserts the ROUTE's property rather than the
+helper's: every redirect it can emit, on every branch, stays on this origin. A unit
+suite for `safeNext` cannot see that the route stopped calling it, and cannot reach
+the failure branch at all - which is a separate piece of code and where an open
+redirect is just as possible. The error redirect is hardcoded and stays that way;
+there is a test pinning that `next` is not appended to it.
+
+`tests/auth/sign-in-errors.test.ts` covers the allowlist, and writing it turned up a
+crash that had been shipping since the allowlist was first added. `AUTH_ERRORS` is an
+object literal, so `AUTH_ERRORS['toString']` is `Object.prototype.toString` - a
+**function** - the `??` fallback never fires, and React is handed a function as a
+child. `GET /sign-in?error=toString` was a blank page. Fixed with `Object.hasOwn`,
+recorded as Q-66, and proven: the `??` form was re-injected and produced 10 named
+failures before the file was restored.
+
+### The PillTabs activation policy
+
+The open question was whether `PillTabs` needs an explicit one. It does, because the
+code and its comment disagreed. The comment claimed automatic activation; the earn
+page's tabs are links, the earn page passes no `onSelect`, and so a link was never
+activated by an arrow key - focus moved and nothing happened.
+
+Manual activation is the CORRECT behaviour for a link, and APG is explicit that
+automatic activation is wrong when activating a tab costs a page load. So the
+component now **derives** the mode from the items and `activation` overrides it. The
+test that asserted "automatic" was asserting it against a group that never had that
+behaviour, and it passed because the test supplied an `onSelect` the real caller does
+not. Also added: `aria-controls` and matching tabpanel ids, wired on the earn page
+through shared exported helpers so the two cannot drift.
+
+### The dark theme
+
+The token layer was restructured so a scheme can be switched at runtime:
+
+    :root / [data-theme='dark']   raw VALUES, one per scheme
+    @theme inline                 NAMES, mapped to those values
+
+A value written directly in `@theme` is compiled into the utility, so there is one of
+it and no seam to switch at. Verified against the BUILT stylesheet rather than the
+source, because a source-level check passes either way:
+
+    .bg-surface      ->  background-color: var(--surface)
+    .text-ink-900    ->  color: var(--ink-900)
+
+`--elev-*` shadows are the one token that cannot simply invert - at the opacity that
+reads correctly on white they are invisible on near-black - so they go deeper and
+stronger instead. Both schemes declare `color-scheme`, or a dark page keeps a white
+scrollbar.
+
+Three implementation decisions worth keeping:
+
+1. **The bootstrap script is generated from the module's constants**, not written
+   twice. It runs in `<head>` before React exists, so the code that decides what a
+   visitor sees on arrival is otherwise untestable.
+2. **The preference is an external store, read with `useSyncExternalStore`.**
+   `localStorage` and `matchMedia` both live outside React. The first version used
+   `useState` plus an effect, which produced a cascading render on every mount and a
+   worse bug: the `matchMedia` handler set state without re-applying `data-theme`, so
+   an OS change at sunset updated the caption under the control and left the page
+   light. That was caught by a test written before the fix.
+3. **The control uses native radio inputs**, visually hidden but focusable, so arrow
+   keys, the single tab stop and the "2 of 3" announcement come from the platform
+   rather than from hand-rolled roving-tabindex code.
+
+`tests/ui/theme.test.ts` reads the stylesheet and enforces that every token has BOTH
+schemes AND a mapping. A missing mapping compiles to no utility at all: `bg-danger-50`
+renders nothing, with no error anywhere in the build. Proven by removing one token's
+dark value and its mapping - the gate named `--gamify-600` in both assertions.
+
+### The brand lockup
+
+`BrandLockup` replaces four verbatim copies. The logo is **not** swapped in: see Q-68.
+`AVERRA_LOGO.png` is a 1254x1254 presentation mockup - a full lockup on an opaque
+near-black square, in blue to purple, with no transparent export and no vector. It
+cannot render at 32px, and its gradient contradicts every green token in the system.
+
+Generating a substitute vector was considered and rejected: an invented mark presented
+as an asset is indistinguishable from a delivered one at review time, and nobody
+downstream could tell which parts of the brand were designed. The refactor makes the
+swap a one-file change once a transparent vector arrives.

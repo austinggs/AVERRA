@@ -219,3 +219,67 @@ Generating a substitute vector was considered and rejected: an invented mark pre
 as an asset is indistinguishable from a delivered one at review time, and nobody
 downstream could tell which parts of the brand were designed. The refactor makes the
 swap a one-file change once a transparent vector arrives.
+
+### A Server Component cannot CALL a value from a `'use client'` module
+
+Fixing the `PillTabs` inertness created a new defect, and it is the only one in this
+record that four separate tools accepted.
+
+Making the tabs real links meant each tab needed an `id` and an `aria-controls`
+naming its panel. The panel is rendered by the **earn page**, a Server Component, and
+the tabs by `PillTabs`, a `'use client'` module. The two ids have to come from the same
+helpers, so those helpers were exported from `PillTabs.tsx` and the earn page called
+them to build its `aria-labelledby`.
+
+That throws, at render, on every load of `/earn`:
+
+    Attempted to call pillTabPanelId() from the server but pillTabPanelId is on
+    the client. It's not possible to invoke a client function from the server.
+
+In the App Router a value exported from a `'use client'` module reaches a Server
+Component as a **client reference** - a proxy object, not a function. Rendering one is
+legal and is the intended pattern; calling one is not. So the helpers moved to
+`src/components/ui/pillTabIds.ts`, which carries no directive, and the earn page
+imports them from there.
+
+**Do not "fix" the old import path by re-exporting.** `export { pillTabId } from
+'./pillTabIds'` inside the client module re-wraps them as client references and
+restores the crash exactly, while looking like the tidier diff.
+
+### `check:server-imports`, and the reason it is scoped to CALLS
+
+The defect passed `tsc`, `eslint`, all 654 vitest tests and `next build`. Every one of
+them resolves the module correctly; only the browser executes the call. So the gate
+fails on a non-client module that imports a name from a `'use client'` module **and
+calls it**.
+
+Two boundaries it deliberately does not cross:
+
+1. **It does not fail on importing.** `<PillTabs />` imported from a client module is
+   the correct pattern. A gate that flagged it would be unusable within one commit.
+2. **It does not fail on type-only imports.** `import type { X }` erases at compile
+   time and crosses the boundary as nothing; every Server Component types its props
+   that way.
+
+PascalCase names are skipped - a component is PascalCase by convention, and calling
+one as a plain function is a separate, rarer defect. Merging the two rules would make
+this one noisier.
+
+It prints its population (`26 client modules, 154 source files, 25
+server-to-client imports`) beside the bad count, and refuses to pass on an empty
+population, because `0 bad` from a predicate that matched nothing is the failure mode
+this repository has now paid for three separate times.
+
+Proven by re-injection, not by a clean run:
+
+| Injected | Result |
+| --- | --- |
+| earn page importing both helpers from `PillTabs` | exit 1, both call sites named with correct line numbers |
+| a `src/` containing no client modules | exit 1, "refusing to pass vacuously" |
+| the fix, restored byte-identically | exit 0 |
+
+Worth recording from that exercise: the first draft of the detector reported **0 client
+modules** across the whole of `src/`, because it compared against `use client` instead
+of `'use client'`. It would have passed on the injected defect too. A gate that has
+never been shown to fail proves nothing, and this one would have shipped as a gate that
+quietly matched nothing.

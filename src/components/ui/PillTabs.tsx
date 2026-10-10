@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cx } from './Card';
+import { pillTabId, pillTabPanelId } from './pillTabIds';
 
 // WHY THIS COMPONENT IS A SEPARATE CLIENT FILE
 //
@@ -83,22 +84,22 @@ interface PillTabsProps {
   activation?: PillTabsActivation;
 }
 
-/** The id a tab carries, given its group's prefix. */
-export function pillTabId(prefix: string, key: string): string {
-  return `${prefix}-tab-${key}`;
-}
-
-/**
- * The id the panel for a tab must carry.
- *
- * Exported so the page rendering the panel cannot drift from the page rendering
- * the tabs. Both call this with the same two arguments, so a renamed prefix
- * breaks one side loudly instead of silently producing a dangling
- * `aria-controls`.
- */
-export function pillTabPanelId(prefix: string, key: string): string {
-  return `${prefix}-panel-${key}`;
-}
+// The id helpers are NOT defined here.
+//
+// `pillTabId` and `pillTabPanelId` are exported from ./pillTabIds, which carries no
+// 'use client' directive. A Server Component that imports them from THIS file
+// receives client references, not functions, and throws the moment it calls one to
+// build the panel's `aria-labelledby`: "Attempted to call pillTabPanelId() from the
+// server but pillTabPanelId is on the client."
+//
+// Rendering a component across that boundary is legal and is the whole point of the
+// App Router. CALLING a value across it is not. So do NOT move these two back here,
+// and do NOT `export { pillTabId } from './pillTabIds'` to keep the old import
+// path working: a re-export re-wraps them as client references and restores the
+// trap exactly.
+//
+// `npm run check:server-imports` fails the build on a non-client module that imports
+// a client-module export and calls it.
 
 /**
  * Segmented pill control, the filter language used across the references.

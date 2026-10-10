@@ -4,7 +4,13 @@ import { errorFields } from '@/lib/observability/errors';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card, EmptyState, Pill } from '@/components/ui/Card';
 import { ButtonLink } from '@/components/ui/Button';
-import { PillTabs, pillTabId, pillTabPanelId } from '@/components/ui/PillTabs';
+import { PillTabs } from '@/components/ui/PillTabs';
+// NOT from '@/components/ui/PillTabs'. PillTabs is a 'use client' module, so a value
+// imported from it is a client reference: rendering <PillTabs /> works, calling
+// pillTabPanelId() throws "Attempted to call ... from the server". The id helpers
+// live in a plain module so this Server Component can build the matching
+// aria-labelledby. `npm run check:server-imports` enforces the split.
+import { pillTabId, pillTabPanelId } from '@/components/ui/pillTabIds';
 import { OfferActions } from '@/components/providers/OfferActions';
 
 export const metadata = { title: 'Earn - Averra' };

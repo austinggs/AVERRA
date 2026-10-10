@@ -24,6 +24,7 @@
     "check:migrations": "node tools/check-migrations.mjs",
     "check:data-api": "node tools/check-data-api.mjs",
     "check:grants": "node tools/check-grants.mjs",
+    "check:server-imports": "node tools/check-server-imports.mjs",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript --linked"

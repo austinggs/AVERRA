@@ -64,6 +64,7 @@ npm run check:bundle # scan the built client bundle for leaked secrets
 npm run check:migrations # structural lint of PL/pgSQL migrations (needs no database)
 npm run check:data-api # fails on any direct .from() read or write of an app table
 npm run check:grants # fails if a public function never revokes EXECUTE from anon
+npm run check:server-imports # fails if a server module CALLS a value from a 'use client' module
 
 A change affecting money, identity, providers, payouts, deposits or game authority
 requires targeted regression tests before it is considered done.
@@ -187,6 +188,12 @@ navigation. The layout and composition are our own, not a reproduction.
   auth forms, both wallet forms, both support forms, the review form, the game shell,
   and three components of the design system itself - so treat that count as the
   reason the rule exists, not as a hypothetical.
+- **A `'use client'` module exports client REFERENCES, and a Server Component cannot
+  call one.** Rendering a client component from a Server Component is the intended
+  pattern and is legal; calling a value exported from that module throws at render.
+  `pillTabId` / `pillTabPanelId` therefore live in `src/components/ui/pillTabIds.ts`
+  with no directive, not beside the component in `PillTabs.tsx`. See Q-70 and
+  `npm run check:server-imports`.
 - **A token is declared in `:root`, not in `@theme`.** The colour layer is split in
   two on purpose, and the rule that follows from it is the one to remember:
 
@@ -236,6 +243,20 @@ navigation. The layout and composition are our own, not a reproduction.
   They do NOT take an `hrefFor(key)` callback: props crossing from a Server
   Component to a Client Component must be serialisable, and that shape
   typechecks perfectly and then throws at runtime.
+- **A Server Component cannot CALL a value from a `'use client'` module.** In the
+  App Router such a value arrives as a **client reference** - a proxy object, not a
+  function. Rendering it is legal and is the whole point; calling it throws at render
+  with "Attempted to call x() from the server". CR-0040 shipped exactly that: the earn
+  page called `pillTabPanelId()` to build its tabpanel's `aria-labelledby`, and tsc,
+  eslint, 654 vitest tests and `next build` all passed, because only a render executes
+  the call. The id helpers now live in `src/components/ui/pillTabIds.ts`, which carries
+  no directive - the same lowercase-pure-module-beside-a-component shape as
+  `navItems.ts`. **Do not `export { pillTabId } from './pillTabIds'` inside
+  `PillTabs.tsx` to keep the old import path**: a re-export re-wraps them as client
+  references and restores the crash while looking like the tidier diff.
+  `npm run check:server-imports` fails on a call. It must not fail merely on
+  *importing* a client reference - `<PillTabs />` from a Server Component is correct -
+  and must not fail on `import type`, which erases. See Q-70.
 - **A tab that navigates cannot be automatically activated.** Arrow keys move
   focus for BOTH kinds of tab; only a tab that filters in place also selects.
   Making that link means activating it is a navigation, and a navigation per
@@ -355,7 +376,10 @@ preserved where it matters. Do not "tidy" this back into a module-scope throw.
   `NEXT_PUBLIC_SITE_URL` twice and the empty copy won, `safeNext` allowed `/\evil.com`,
   and `warning`/`gamify` plus `eligible`/`reserved` rendered as one badge. Adds the
   `danger`/`warning`/`locked` scales and a gate that rejects the vendor palette across
-  all 99 component and app files. See
+  all 99 component and app files. Wiring the tabs to their panels then created a
+  server/client boundary defect that tsc, eslint, 654 vitest tests and `next build`
+  all accepted, so the id helpers moved to `pillTabIds.ts` and
+  `npm run check:server-imports` was added. See
   `docs/change-records/CR-0040-design-system-defect-sweep.md`.
 
 ## An ad impression is not a conversion, and the CSP derives its own allowlist

@@ -2840,3 +2840,44 @@ The general rule this is an instance of: **a byte that a tool cannot render is a
 a reviewer cannot see.** Escape anything below U+0020 in source, always. The cheap
 detection is not a lint rule - it is `git diff --stat` printing `Bin` where text was
 expected, and a byte scan, which is why the sweep was worth running at all.
+
+## Q-70 - a Server Component called a function from a `'use client'` module
+
+`src/app/(app)/earn/page.tsx` built its tabpanel's `aria-labelledby` by calling
+`pillTabId()` and `pillTabPanelId()`, imported from `@/components/ui/PillTabs`.
+`PillTabs.tsx` is a `'use client'` module, so those are client references in a Server
+Component, and the page threw on every render:
+
+    Attempted to call pillTabPanelId() from the server but pillTabPanelId is on the
+    client. It's not possible to invoke a client function from the server.
+
+**Why every tool passed it.** `tsc`, `eslint`, all 654 vitest tests and `next build`
+each resolve the module correctly; the call is legal TypeScript and legal at compile
+time. Only a render executes it. This is the same shape as the `checkOutParameterReturns`
+defect in Q-17 - a tool that resolves a definition without executing the thing the
+definition promises.
+
+**How it happened.** Fixing the inert-`PillTabs` defect (CR-0040) required shared id
+helpers, because the tabs and their panel are rendered in two different files and a
+drifted id is a broken `aria-controls` that looks perfect. The helpers were exported
+from the client module, which is where they were implemented, and the Server Component
+called them from there.
+
+The fix moved them to `src/components/ui/pillTabIds.ts` with no directive, and added
+`npm run check:server-imports`.
+
+**The trap in fixing the import path.** `export { pillTabId } from './pillTabIds'`
+inside `PillTabs.tsx` re-wraps them as client references and restores the crash
+exactly - while looking like the tidier diff, because it keeps both call sites
+unchanged. Do not do that.
+
+**Two boundaries the gate must not cross, or it is unusable within one commit:**
+
+- It must not fail on *importing* a client reference. `<PillTabs />` imported into a
+  Server Component is the intended App Router pattern.
+- It must not fail on `import type`, which erases at compile time and is how every
+  Server Component types its props.
+
+The general rule: **a value exported from a `'use client'` module is a proxy object in
+a Server Component, not a function.** Rendering it is legal; calling it is not. A pure
+value belongs in a module with no directive.

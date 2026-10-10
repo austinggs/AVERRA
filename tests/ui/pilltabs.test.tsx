@@ -1,7 +1,9 @@
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { PillTabs, pillTabId, pillTabPanelId } from '@/components/ui/PillTabs';
+import { PillTabs } from '@/components/ui/PillTabs';
+// From the plain module, not the 'use client' one - see src/components/ui/pillTabIds.ts.
+import { pillTabId, pillTabPanelId } from '@/components/ui/pillTabIds';
 
 // PillTabs shipped completely inert.
 //
